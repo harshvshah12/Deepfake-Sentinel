@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from PIL import Image
 from pydantic import BaseModel
 from fastapi import FastAPI, File, UploadFile, Query, Body, HTTPException
-from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -59,29 +59,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Hardware & Lazy Model Services
+# Initialize Hardware & Model Services
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-_extractor = None
-_ensemble = None
-_iris_engine = None
-
-def get_extractor():
-    global _extractor
-    if _extractor is None:
-        _extractor = FaceExtractor(device=device)
-    return _extractor
-
-def get_ensemble():
-    global _ensemble
-    if _ensemble is None:
-        _ensemble = EnsembleModel(device=device)
-    return _ensemble
-
-def get_iris_engine():
-    global _iris_engine
-    if _iris_engine is None:
-        _iris_engine = IrisBiometricEngine(device=device)
-    return _iris_engine
+extractor = FaceExtractor(device=device)
+ensemble = EnsembleModel(device=device)
+iris_engine = IrisBiometricEngine(device=device)
 
 class FramePayload(BaseModel):
     image: str
@@ -100,16 +82,7 @@ class GeminiTestPayload(BaseModel):
 
 @app.get("/")
 def read_root():
-    candidates = [
-        Path(__file__).resolve().parent.parent / "frontend" / "static" / "index.html",
-        Path("frontend/static/index.html"),
-        Path("/var/task/frontend/static/index.html")
-    ]
-    for p in candidates:
-        if p.exists():
-            with open(p, "r", encoding="utf-8") as f:
-                return HTMLResponse(content=f.read())
-    return HTMLResponse(content="<h1>Deepfake Sentinel UI</h1>", status_code=200)
+    return FileResponse("frontend/static/index.html")
 
 @app.get("/health")
 def health():
@@ -242,8 +215,8 @@ async def predict(
             # Process Video File
             result = process_video_file(
                 video_bytes=contents,
-                extractor=get_extractor(),
-                ensemble_model=get_ensemble(),
+                extractor=extractor,
+                ensemble_model=ensemble,
                 device=device,
                 max_frames=12,
                 attack=attack,
@@ -258,39 +231,52 @@ async def predict(
         else:
             # Process Single Image
             image = Image.open(io.BytesIO(contents)).convert("RGB")
-            face_meta = get_extractor().extract_face_and_landmarks(image)
+            face_meta = extractor.extract_face_and_landmarks(image)
             face_img = face_meta["face_img"]
             face_np = face_meta["face_np"]
+            face_crop = face_img if face_meta.get("detected") else image
             
-            # Select optimal evaluation image for spatial backbones
-            w, h = image.size
-            if max(w, h) <= 1024:
-                eval_img = image
-            elif face_meta.get("detected", False):
-                eval_img = face_meta["face_img"]
-            else:
-                eval_img = image
+            # Input tensor for CAM / FGSM pipelines
+            input_tensor = ensemble.eff_transform(face_crop).unsqueeze(0).to(device)
             
-            # Input tensor for primary model
-            input_tensor = get_ensemble().eff_transform(eval_img).unsqueeze(0).to(device)
-            
-            # 1. Spatial Inference with TTA
+            # 1. Dual-Crop Spatial Inference with TTA
             if attack:
-                input_tensor = generate_adversarial_perturbation(get_ensemble(), input_tensor, label_idx=1, epsilon=epsilon)
+                input_tensor = generate_adversarial_perturbation(ensemble, input_tensor, label_idx=1, epsilon=epsilon)
                 with torch.no_grad():
-                    eff_logit = get_ensemble().eff_model(input_tensor).item()
+                    eff_logit = ensemble.eff_model(input_tensor).item()
                     eff_fake_p = torch.sigmoid(torch.tensor(eff_logit)).item()
                 raw_real_prob = round(1.0 - eff_fake_p, 4)
                 raw_fake_prob = round(eff_fake_p, 4)
+                eff_fake_prob = raw_fake_prob
+                vit_fake_prob = raw_fake_prob
             else:
-                raw_real_prob, raw_fake_prob, _, _ = get_ensemble().predict_single(eval_img, use_tta=True)
+                # Backbone 1: EfficientNet-B3 on MTCNN-aligned Face Crop with TTA
+                t_crop = ensemble.eff_transform(face_crop).unsqueeze(0).to(device)
+                t_crop_flip = ensemble.eff_transform(face_crop.transpose(Image.FLIP_LEFT_RIGHT)).unsqueeze(0).to(device)
+                with torch.no_grad():
+                    eff_logit1 = ensemble.eff_model(t_crop).item()
+                    eff_logit2 = ensemble.eff_model(t_crop_flip).item()
+                    eff_fake_prob = torch.sigmoid(torch.tensor((eff_logit1 + eff_logit2) / 2.0)).item()
+
+                # Backbone 2: ViT-B/16 on Contextual Portrait with TTA
+                v_in = ensemble.processor(images=image, return_tensors='pt')
+                v_in_flip = ensemble.processor(images=image.transpose(Image.FLIP_LEFT_RIGHT), return_tensors='pt')
+                with torch.no_grad():
+                    vit_l1 = ensemble.vit_model(pixel_values=v_in['pixel_values'].to(device)).logits
+                    vit_l2 = ensemble.vit_model(pixel_values=v_in_flip['pixel_values'].to(device)).logits
+                    vit_probs = torch.softmax((vit_l1 + vit_l2) / 2.0, dim=1)[0]
+                    vit_fake_prob = float(vit_probs[1].item())
+
+                raw_fake_prob = float((vit_fake_prob * 0.55) + (eff_fake_prob * 0.45))
+                raw_real_prob = round(1.0 - raw_fake_prob, 4)
+                raw_fake_prob = round(raw_fake_prob, 4)
 
             # 2. Spectral Fourier Analysis (Physics Domain)
             spectral_data = calculate_spectral_analysis(face_np)
             fft_spectrum = compute_fft_spectrum(face_np)
             
             # 3. Biometric Iris & Corneal Specular Reflection Analysis
-            iris_data = get_iris_engine().analyze_eyes(image, face_meta.get("landmarks", []))
+            iris_data = iris_engine.analyze_eyes(image, face_meta.get("landmarks", []))
             
             # 4. Color Space & Boundary Discontinuity Analysis
             color_data = analyze_chroma_and_boundary(face_np, bbox=face_meta.get("bbox"))
@@ -298,7 +284,7 @@ async def predict(
             # 5. Provenance, EXIF & C2PA Validation
             provenance_data = parse_exif_metadata(image)
             c2pa_data = detect_c2pa_manifest(contents)
-            synthid_data = detect_synthid_watermark(face_np)
+            synthid_data = detect_synthid_watermark(face_np, contents)
             hash_data = compute_cryptographic_and_perceptual_hashes(face_np, contents)
             
             # 6. Active Learning Feedback Memory Override Check
@@ -318,42 +304,35 @@ async def predict(
                 feedback_applied = True
             else:
                 feedback_applied = False
-                # Multi-Modal Forensic Evidence Modulation
-                iris_score = float(iris_data.get("iris_anomaly_score", 0.28))
-                spectral_score = float(spectral_data.get("anomaly_score", 0.28))
+                # Multi-Modal Forensic Evidence Bayesian Fusion
+                iris_score = float(iris_data.get("iris_anomaly_score", 0.25))
+                spectral_score = float(spectral_data.get("anomaly_score", 0.25))
                 color_score = float(color_data.get("color_anomaly_index", 0.20))
                 
-                biometric_delta = 0.0
-                if iris_score > 0.45:
-                    biometric_delta += 0.25 * ((iris_score - 0.45) / 0.55)
-                elif iris_score < 0.32:
-                    biometric_delta -= 0.15 * ((0.32 - iris_score) / 0.32)
-                    
-                if spectral_score > 0.50:
-                    biometric_delta += 0.18 * ((spectral_score - 0.50) / 0.50)
-                elif spectral_score < 0.28:
-                    biometric_delta -= 0.12 * ((0.28 - spectral_score) / 0.28)
-                    
-                if color_score > 0.40:
-                    biometric_delta += 0.12 * ((color_score - 0.40) / 0.60)
-                elif color_score < 0.20:
-                    biometric_delta -= 0.08 * ((0.20 - color_score) / 0.20)
-
-                # Direct Provenance Modulation
-                if provenance_data.get("ai_software_detected"):
-                    biometric_delta += 0.35
+                # Multi-modal weighted fusion: 40% ViT + 30% EffNet + 15% Spectral + 10% Iris + 5% Color
+                fused_fake_raw = (
+                    (vit_fake_prob * 0.40) +
+                    (eff_fake_prob * 0.30) +
+                    (spectral_score * 0.15) +
+                    (iris_score * 0.10) +
+                    (color_score * 0.05)
+                )
+                
+                # Direct Provenance & SynthID Modulation
+                if synthid_data.get("synthid_detected") or provenance_data.get("ai_software_detected"):
+                    fused_fake_raw = max(fused_fake_raw, 0.92)
                 elif c2pa_data.get("c2pa_manifest_detected"):
-                    biometric_delta -= 0.35
+                    fused_fake_raw = min(fused_fake_raw, 0.08)
                     
-                fused_fake_prob = float(np.clip(raw_fake_prob + biometric_delta, 0.001, 0.999))
+                fused_fake_prob = float(np.clip(fused_fake_raw, 0.001, 0.999))
                 fused_real_prob = round(1.0 - fused_fake_prob, 4)
                 fused_fake_prob = round(fused_fake_prob, 4)
-                prediction = "Fake" if fused_fake_prob > 0.48 else "Real"
+                prediction = "Fake" if fused_fake_prob > 0.45 else "Real"
                 confidence = float(max(fused_real_prob, fused_fake_prob))
 
             # Grad-CAM XAI Heatmap
             try:
-                heatmap = generate_heatmap(get_ensemble(), input_tensor, face_np)
+                heatmap = generate_heatmap(ensemble, input_tensor, face_np)
             except Exception:
                 heatmap = face_np
                 
@@ -412,7 +391,7 @@ async def predict_frame(payload: FramePayload = Body(...)):
         header, encoded = payload.image.split(",", 1) if "," in payload.image else ("", payload.image)
         img_bytes = base64.b64decode(encoded)
         image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-        face_meta = get_extractor().extract_face_and_landmarks(image)
+        face_meta = extractor.extract_face_and_landmarks(image)
         
         if not face_meta["detected"]:
             return {
@@ -429,9 +408,9 @@ async def predict_frame(payload: FramePayload = Body(...)):
         face_np = face_meta["face_np"]
         
         # Spatial inference
-        real_p, fake_p, pred, conf = get_ensemble().predict_single(face_img, use_tta=False)
+        real_p, fake_p, pred, conf = ensemble.predict_single(face_img, use_tta=False)
         spectral_data = calculate_spectral_analysis(face_np)
-        iris_data = get_iris_engine().analyze_eyes(image, face_meta.get("landmarks", []))
+        iris_data = iris_engine.analyze_eyes(image, face_meta.get("landmarks", []))
         
         # Check active learning feedback
         hash_data = compute_cryptographic_and_perceptual_hashes(face_np)
@@ -458,10 +437,5 @@ async def predict_frame(payload: FramePayload = Body(...)):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# Mount static frontend if directory exists
-_static_dir = Path(__file__).resolve().parent.parent / "frontend" / "static"
-if _static_dir.exists():
-    try:
-        app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
-    except Exception:
-        pass
+# Mount static frontend
+app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
