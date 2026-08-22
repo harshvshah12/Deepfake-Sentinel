@@ -1,0 +1,82 @@
+{
+  "3bf6adaa8e84e321431b30b6b539c69914da33f87bd4ae820898345492cbdfc7": {
+    "sha256": "3bf6adaa8e84e321431b30b6b539c69914da33f87bd4ae820898345492cbdfc7",
+    "phash": "9e697865a224dab6",
+    "corrected_label": "Fake",
+    "original_prediction": "Real",
+    "confidence": 1.0,
+    "metadata": {
+      "user_override": true,
+      "timestamp": "2026-08-21T19:08:08.029Z"
+    }
+  },
+  "87747a14e38b79182b62a75a83d9c1c1c85e0a4e68c464aed5f2d7f9ea340547": {
+    "sha256": "87747a14e38b79182b62a75a83d9c1c1c85e0a4e68c464aed5f2d7f9ea340547",
+    "phash": "9a607c25a17ccada",
+    "corrected_label": "Fake",
+    "original_prediction": "Real",
+    "confidence": 1.0,
+    "metadata": {
+      "user_override": true,
+      "timestamp": "2026-08-21T19:09:33.902Z"
+    }
+  },
+  "a802d8b6c7280a08cff6dcf1b6d673dd4d6531a778aead76be3a6c04e917fecc": {
+    "sha256": "a802d8b6c7280a08cff6dcf1b6d673dd4d6531a778aead76be3a6c04e917fecc",
+    "phash": "eae847c5e19e9e9a",
+    "corrected_label": "Real",
+    "original_prediction": "Real",
+    "confidence": 1.0,
+    "metadata": {
+      "confirmed_by_user": true
+    }
+  },
+  "test_sha_123": {
+    "sha256": "test_sha_123",
+    "phash": "a1b2c3d4e5f60718",
+    "corrected_label": "Real",
+    "original_prediction": "Fake",
+    "confidence": 1.0,
+    "metadata": {}
+  },
+  "e35751b8278bafe37e4e0ee8315b7cc04a06ef584420723657400558d1aa67bf": {
+    "sha256": "e35751b8278bafe37e4e0ee8315b7cc04a06ef584420723657400558d1aa67bf",
+    "phash": "ab4b70b4d1d5c743",
+    "corrected_label": "Fake",
+    "original_prediction": "Real",
+    "confidence": 1.0,
+    "metadata": {}
+  },
+  "689120e63167d02dfd75c074a21dd5f72103934986b9d8f767d1026f3027e757": {
+    "sha256": "689120e63167d02dfd75c074a21dd5f72103934986b9d8f767d1026f3027e757",
+    "phash": "962b3bc994d64964",
+    "corrected_label": "Real",
+    "original_prediction": "Real",
+    "confidence": 1.0,
+    "metadata": {
+      "user_override": true,
+      "timestamp": "2026-08-21T19:49:05.806Z"
+    }
+  },
+  "1a3149eb5c3f0028b7d020efeb99279d894dc4db504b7f3fbd4bd697dffa3392": {
+    "sha256": "1a3149eb5c3f0028b7d020efeb99279d894dc4db504b7f3fbd4bd697dffa3392",
+    "phash": "8741f69e783908ce",
+    "corrected_label": "Fake",
+    "original_prediction": "Real",
+    "confidence": 1.0,
+    "metadata": {
+      "user_override": true,
+      "timestamp": "2026-08-21T19:54:14.441Z"
+    }
+  },
+  "3662582c819c6ce3be6912f030f7d47400a4c0c7f55d28f179e436b3939e8a75": {
+    "sha256": "3662582c819c6ce3be6912f030f7d47400a4c0c7f55d28f179e436b3939e8a75",
+    "phash": "e88645e196eb9cf3",
+    "corrected_label": "Real",
+    "original_prediction": "Real",
+    "confidence": 1.0,
+    "metadata": {
+      "confirmed_by_user": true
+    }
+  }
+}

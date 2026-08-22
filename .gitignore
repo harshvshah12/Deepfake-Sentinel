@@ -1,0 +1,33 @@
+# Python & Environment
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Credentials & Sensitive Configs
+kaggle.json
+*.pem
+*.key
+credentials.json
+.env.local
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs & Playwright
+*.log
+.playwright-mcp/
+tests/screenshots/
+
+# Cache directories
+.cache/
+.pytest_cache/
