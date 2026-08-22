@@ -27,6 +27,7 @@ from backend.provenance import (
     parse_exif_metadata,
     detect_c2pa_manifest,
     detect_synthid_watermark,
+    detect_visual_watermarks_and_logos,
     compute_cryptographic_and_perceptual_hashes
 )
 from backend.explainability import generate_forensic_explanation, call_gemini_forensic_reasoner
@@ -285,6 +286,7 @@ async def predict(
             provenance_data = parse_exif_metadata(image)
             c2pa_data = detect_c2pa_manifest(contents)
             synthid_data = detect_synthid_watermark(face_np, contents)
+            visual_watermark_data = detect_visual_watermarks_and_logos(np.array(image), contents)
             hash_data = compute_cryptographic_and_perceptual_hashes(face_np, contents)
             
             # 6. Active Learning Feedback Memory Override Check
@@ -302,6 +304,13 @@ async def predict(
                     prediction = "Fake"
                 confidence = 0.999
                 feedback_applied = True
+            elif visual_watermark_data.get("watermark_detected"):
+                # Hard override if visual AI logo / Gemini star / DALL-E marker is detected
+                fused_fake_prob = 0.999
+                fused_real_prob = 0.001
+                prediction = "Fake"
+                confidence = 0.999
+                feedback_applied = False
             else:
                 feedback_applied = False
                 # Multi-Modal Forensic Evidence Bayesian Fusion
@@ -341,6 +350,8 @@ async def predict(
             # Unified Authenticity Confidence Index (0-100%)
             authenticity_index = round(fused_real_prob * 100, 1)
             
+            full_b64 = f"data:image/jpeg;base64,{base64.b64encode(contents).decode('utf-8')}"
+            
             response_payload = {
                 "media_type": "image",
                 "filename": filename,
@@ -358,6 +369,7 @@ async def predict(
                 "provenance": provenance_data,
                 "c2pa": c2pa_data,
                 "synthid": synthid_data,
+                "visual_watermark": visual_watermark_data,
                 "hashes": hash_data,
                 "feedback_applied": feedback_applied,
                 "feedback_details": feedback_override if feedback_applied else None,
@@ -367,6 +379,7 @@ async def predict(
                 "bbox": face_meta["bbox"],
                 "landmarks": face_meta["landmarks"],
                 "face_b64": np_to_b64(face_resized),
+                "full_image_b64": full_b64,
                 "heatmap_b64": np_to_b64(heatmap),
                 "fft_b64": np_to_b64(fft_spectrum)
             }

@@ -1944,7 +1944,12 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                 badge.innerText = c2pa.c2pa_manifest_detected ? "C2PA Cryptographically Signed" : "No Manifest Attached";
             }
 
-            if (data.synthid) {
+            if (data.visual_watermark && data.visual_watermark.watermark_detected) {
+                const vw = data.visual_watermark;
+                document.getElementById('prov-synthid-val').innerText = "AI Watermark / Logo Detected";
+                document.getElementById('prov-synthid-val').className = "text-purple-400 font-bold text-[11px]";
+                document.getElementById('prov-synthid-type').innerText = `${vw.watermark_type} [${vw.location}]`;
+            } else if (data.synthid) {
                 const syn = data.synthid;
                 document.getElementById('prov-synthid-val').innerText = syn.synthid_detected ? "SynthID Watermark Found" : "Clean Pixel Stream";
                 document.getElementById('prov-synthid-val').className = syn.synthid_detected ? "text-purple-400 font-bold text-[11px]" : "text-cyan-400 font-bold text-[11px]";

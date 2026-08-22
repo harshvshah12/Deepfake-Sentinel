@@ -113,10 +113,10 @@ def call_gemini_forensic_reasoner(payload: Dict[str, Any], api_key: str) -> Opti
     
     parts = []
     
-    # 1. Attach Visual Image Data if present in payload (Multimodal Vision)
-    face_b64 = payload.get("face_b64")
-    if face_b64:
-        raw_b64 = face_b64.split(",")[-1] if "," in face_b64 else face_b64
+    # 1. Attach Visual Image Data (Prefer full uncropped image to catch corner logos/watermarks)
+    img_b64 = payload.get("full_image_b64") or payload.get("face_b64")
+    if img_b64:
+        raw_b64 = img_b64.split(",")[-1] if "," in img_b64 else img_b64
         parts.append({
             "inline_data": {
                 "mime_type": "image/jpeg",
@@ -126,14 +126,17 @@ def call_gemini_forensic_reasoner(payload: Dict[str, Any], api_key: str) -> Opti
     
     # 2. Forensic Vision & Telemetry Prompt
     prompt_text = (
-        "You are a Senior Digital Forensics Specialist analyzing this facial specimen.\n"
-        "Please provide your response in exactly this clean, two-part structure:\n\n"
-        "Visual Description: [Describe in exactly one clear line who/what is depicted in the image, their appearance, expression, and setting]\n\n"
-        "Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE, followed by 1-2 sentences of visual reasoning on skin texture, eye reflections, lighting, and synthetic artifacts]\n\n"
+        "You are an Elite Forensic Vision Specialist & AI Watermark Detection System.\n"
+        "Carefully inspect this full uncropped image for authenticity:\n"
+        "1. AI Watermarks & Logos: Look specifically for Google Gemini 4-pointed sparkle/star icons, DALL-E color badges, Bing Creator icons, Adobe Firefly stamps, TikTok AI markers, or watermark overlays anywhere on the image or in the corners. If ANY AI logo/watermark is present, you MUST state DETECTED.\n"
+        "2. Visual & Generative Anomalies: Inspect skin texture (airbrushed plastic sheen), iris catchlights/pupil asymmetry, ear/hair blending, impossible lighting physics, hands/fingers, and background distortions.\n\n"
+        "Provide your analysis in exactly this format:\n\n"
+        "Visual Description: [Describe in one clear line who/what is depicted in the image, their pose, setting, and background]\n\n"
+        "AI Logo / Watermark: [State DETECTED: <Name/Location of logo or watermark> or None Visible]\n\n"
+        "Forensic Verdict: [State **REAL** or **FAKE**, followed by 1-2 authoritative sentences explaining your judgment, citing any visible logos, skin texture, lighting, and anatomy]\n\n"
         f"Automated Model Diagnostic Reference:\n"
-        f"- Unified Verdict: {payload.get('prediction')} ({payload.get('confidence', 0.95)*100:.1f}% confidence)\n"
+        f"- Spatial Ensemble Probability: {payload.get('fake_probability', 0.5)*100:.1f}% Fake\n"
         f"- Spectral Anomaly Score: {payload.get('spectral_anomaly_score')}\n"
-        f"- Corneal Specular Asymmetry: {payload.get('iris_biometrics', {}).get('specular_asymmetry')}\n"
     )
     parts.append({"text": prompt_text})
     
@@ -142,7 +145,7 @@ def call_gemini_forensic_reasoner(payload: Dict[str, Any], api_key: str) -> Opti
             "parts": parts
         }],
         "generationConfig": {
-            "temperature": 0.2,
+            "temperature": 0.1,
             "maxOutputTokens": 800
         }
     }

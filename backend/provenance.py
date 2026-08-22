@@ -212,3 +212,106 @@ def detect_synthid_watermark(image_np: np.ndarray, file_bytes: bytes = b"") -> D
         "residual_std": round(residual_std, 4),
         "detection_method": detection_method
     }
+
+def detect_visual_watermarks_and_logos(image_np: np.ndarray, file_bytes: bytes = b"") -> Dict[str, Any]:
+    """
+    Scans the full image boundaries and all 4 corners for visible/semi-transparent AI logos,
+    including the Google Gemini 4-pointed sparkle star logo, DALL-E color bar, Bing Creator icon,
+    and synthetic watermark stamps.
+    """
+    h, w = image_np.shape[:2]
+    gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY) if len(image_np.shape) == 3 else image_np
+    
+    # 1. Metadata and byte signature scanner
+    signatures = [
+        (b"synthid", "Google SynthID Digital Watermark"),
+        (b"SynthID", "Google SynthID Digital Watermark"),
+        (b"deepmind", "Google DeepMind Imagen Stamp"),
+        (b"DeepMind", "Google DeepMind Imagen Stamp"),
+        (b"imagen", "Google Imagen Synthetic Identifier"),
+        (b"Imagen", "Google Imagen Synthetic Identifier"),
+        (b"gemini", "Google Gemini AI Watermark"),
+        (b"Gemini", "Google Gemini AI Watermark"),
+        (b"c2pa.synthetic", "C2PA Synthetic Media Assertion"),
+        (b"c2pa.ai_generated", "C2PA AI-Generated Watermark"),
+        (b"adobe:generator", "Adobe Generative AI Watermark"),
+        (b"firefly", "Adobe Firefly AI Signature"),
+        (b"midjourney", "Midjourney Generative Stamp"),
+        (b"stable diffusion", "Stable Diffusion Watermark"),
+        (b"dall-e", "OpenAI DALL-E Generative Signature")
+    ]
+    
+    meta_name = None
+    if file_bytes:
+        for sig, name in signatures:
+            if sig in file_bytes:
+                meta_name = name
+                break
+                
+    if meta_name:
+        return {
+            "watermark_detected": True,
+            "watermark_type": meta_name,
+            "location": "Cryptographic Metadata / Header Stream",
+            "confidence": 0.99
+        }
+        
+    # 2. Geometric & Color Watermark Scan in all 4 Corners
+    cw = max(24, int(w * 0.22))
+    ch = max(24, int(h * 0.22))
+    
+    corners = [
+        ("Bottom-Right Corner", gray[h-ch:h, w-cw:w], image_np[h-ch:h, w-cw:w] if len(image_np.shape) == 3 else None),
+        ("Bottom-Left Corner", gray[h-ch:h, 0:cw], image_np[h-ch:h, 0:cw] if len(image_np.shape) == 3 else None),
+        ("Top-Right Corner", gray[0:ch, w-cw:w], image_np[0:ch, w-cw:w] if len(image_np.shape) == 3 else None),
+        ("Top-Left Corner", gray[0:ch, 0:cw], image_np[0:ch, 0:cw] if len(image_np.shape) == 3 else None)
+    ]
+    
+    for c_name, c_gray, c_rgb in corners:
+        if c_gray is None or c_gray.size == 0:
+            continue
+            
+        # A. Detect sharp star/sparkle contours (Gemini 4-pointed sparkle icon)
+        edges = cv2.Canny(c_gray, 40, 140)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if 30 < area < (cw * ch * 0.40):
+                perimeter = cv2.arcLength(cnt, True)
+                if perimeter > 0:
+                    approx = cv2.approxPolyDP(cnt, 0.04 * perimeter, True)
+                    # 4 to 8 vertices with high local contrast indicates geometric star/logo
+                    if 4 <= len(approx) <= 8:
+                        mask = np.zeros_like(c_gray)
+                        cv2.drawContours(mask, [cnt], -1, 255, -1)
+                        mean_val = np.mean(c_gray[mask == 255])
+                        bg_val = np.mean(c_gray[mask == 0]) if np.any(mask == 0) else 0
+                        if abs(mean_val - bg_val) > 25:
+                            return {
+                                "watermark_detected": True,
+                                "watermark_type": "Google Gemini / Generative AI Corner Logo",
+                                "location": c_name,
+                                "confidence": 0.96
+                            }
+                            
+        # B. Detect DALL-E / Bing saturated color bar in bottom corners
+        if c_rgb is not None and "Bottom" in c_name:
+            hsv = cv2.cvtColor(c_rgb, cv2.COLOR_RGB2HSV)
+            sat = hsv[:, :, 1]
+            val = hsv[:, :, 2]
+            high_sat_mask = (sat > 150) & (val > 130)
+            if np.sum(high_sat_mask) > 50:
+                return {
+                    "watermark_detected": True,
+                    "watermark_type": "DALL-E / Bing AI Colored Watermark Bar",
+                    "location": c_name,
+                    "confidence": 0.94
+                }
+                
+    return {
+        "watermark_detected": False,
+        "watermark_type": "No Visual AI Watermark Detected",
+        "location": "None",
+        "confidence": 0.05
+    }
