@@ -1295,7 +1295,7 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                         await runClientSideGeminiVision(currentSelectedFile, geminiKey);
                         success = true;
                     } else {
-                        throw new Error("Backend server is offline and no Gemini API Key is configured. Please enter your Gemini API key in the top navbar.");
+                        openGeminiModal();
                     }
                 } catch (err) {
                     alert(`Analysis Notice: ${err.message}`);
@@ -1409,12 +1409,16 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                 localStorage.setItem('gemini_api_key', key);
                 document.getElementById('gemini-btn-label').innerText = "Gemini Key (Active)";
                 document.getElementById('gemini-key-btn').className = "px-3 py-1.5 rounded-lg text-xs font-mono font-medium bg-purple-500/20 text-purple-300 border border-purple-500/50 hover:bg-purple-500/30 transition-all flex items-center gap-1.5";
+                closeGeminiModal();
+                if (currentSelectedFile) {
+                    executeImageAnalysis();
+                }
             } else {
                 localStorage.removeItem('gemini_api_key');
                 document.getElementById('gemini-btn-label').innerText = "Gemini AI Key";
                 document.getElementById('gemini-key-btn').className = "px-3 py-1.5 rounded-lg text-xs font-mono font-medium bg-purple-500/10 text-purple-300 border border-purple-500/30 hover:bg-purple-500/20 transition-all flex items-center gap-1.5";
+                closeGeminiModal();
             }
-            closeGeminiModal();
         }
 
         function clearGeminiKey() {
