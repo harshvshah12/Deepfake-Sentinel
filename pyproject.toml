@@ -1,2 +1,6 @@
+[project]
+name = "deepfake-sentinel"
+version = "3.1.0"
+
 [tool.vercel]
-entrypoint = " backend/main.py\n
+entrypoint = "backend.main:app"
