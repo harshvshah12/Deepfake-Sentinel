@@ -1,4 +1,4 @@
-﻿{
+{
   "outputDirectory": "frontend/static",
   "cleanUrls": true,
   "rewrites": [
