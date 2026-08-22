@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from PIL import Image
 from pydantic import BaseModel
 from fastapi import FastAPI, File, UploadFile, Query, Body, HTTPException
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -59,11 +59,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Hardware & Model Services
+# Initialize Hardware & Lazy Model Services
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-extractor = FaceExtractor(device=device)
-ensemble = EnsembleModel(device=device)
-iris_engine = IrisBiometricEngine(device=device)
+_extractor = None
+_ensemble = None
+_iris_engine = None
+
+def get_extractor():
+    global _extractor
+    if _extractor is None:
+        _extractor = FaceExtractor(device=device)
+    return _extractor
+
+def get_ensemble():
+    global _ensemble
+    if _ensemble is None:
+        _ensemble = EnsembleModel(device=device)
+    return _ensemble
+
+def get_iris_engine():
+    global _iris_engine
+    if _iris_engine is None:
+        _iris_engine = IrisBiometricEngine(device=device)
+    return _iris_engine
 
 class FramePayload(BaseModel):
     image: str
@@ -82,7 +100,16 @@ class GeminiTestPayload(BaseModel):
 
 @app.get("/")
 def read_root():
-    return FileResponse("frontend/static/index.html")
+    candidates = [
+        Path(__file__).resolve().parent.parent / "frontend" / "static" / "index.html",
+        Path("frontend/static/index.html"),
+        Path("/var/task/frontend/static/index.html")
+    ]
+    for p in candidates:
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>Deepfake Sentinel UI</h1>", status_code=200)
 
 @app.get("/health")
 def health():
@@ -215,8 +242,8 @@ async def predict(
             # Process Video File
             result = process_video_file(
                 video_bytes=contents,
-                extractor=extractor,
-                ensemble_model=ensemble,
+                extractor=get_extractor(),
+                ensemble_model=get_ensemble(),
                 device=device,
                 max_frames=12,
                 attack=attack,
@@ -231,7 +258,7 @@ async def predict(
         else:
             # Process Single Image
             image = Image.open(io.BytesIO(contents)).convert("RGB")
-            face_meta = extractor.extract_face_and_landmarks(image)
+            face_meta = get_extractor().extract_face_and_landmarks(image)
             face_img = face_meta["face_img"]
             face_np = face_meta["face_np"]
             
@@ -245,25 +272,25 @@ async def predict(
                 eval_img = image
             
             # Input tensor for primary model
-            input_tensor = ensemble.eff_transform(eval_img).unsqueeze(0).to(device)
+            input_tensor = get_ensemble().eff_transform(eval_img).unsqueeze(0).to(device)
             
             # 1. Spatial Inference with TTA
             if attack:
-                input_tensor = generate_adversarial_perturbation(ensemble, input_tensor, label_idx=1, epsilon=epsilon)
+                input_tensor = generate_adversarial_perturbation(get_ensemble(), input_tensor, label_idx=1, epsilon=epsilon)
                 with torch.no_grad():
-                    eff_logit = ensemble.eff_model(input_tensor).item()
+                    eff_logit = get_ensemble().eff_model(input_tensor).item()
                     eff_fake_p = torch.sigmoid(torch.tensor(eff_logit)).item()
                 raw_real_prob = round(1.0 - eff_fake_p, 4)
                 raw_fake_prob = round(eff_fake_p, 4)
             else:
-                raw_real_prob, raw_fake_prob, _, _ = ensemble.predict_single(eval_img, use_tta=True)
+                raw_real_prob, raw_fake_prob, _, _ = get_ensemble().predict_single(eval_img, use_tta=True)
 
             # 2. Spectral Fourier Analysis (Physics Domain)
             spectral_data = calculate_spectral_analysis(face_np)
             fft_spectrum = compute_fft_spectrum(face_np)
             
             # 3. Biometric Iris & Corneal Specular Reflection Analysis
-            iris_data = iris_engine.analyze_eyes(image, face_meta.get("landmarks", []))
+            iris_data = get_iris_engine().analyze_eyes(image, face_meta.get("landmarks", []))
             
             # 4. Color Space & Boundary Discontinuity Analysis
             color_data = analyze_chroma_and_boundary(face_np, bbox=face_meta.get("bbox"))
@@ -326,7 +353,7 @@ async def predict(
 
             # Grad-CAM XAI Heatmap
             try:
-                heatmap = generate_heatmap(ensemble, input_tensor, face_np)
+                heatmap = generate_heatmap(get_ensemble(), input_tensor, face_np)
             except Exception:
                 heatmap = face_np
                 
@@ -385,7 +412,7 @@ async def predict_frame(payload: FramePayload = Body(...)):
         header, encoded = payload.image.split(",", 1) if "," in payload.image else ("", payload.image)
         img_bytes = base64.b64decode(encoded)
         image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-        face_meta = extractor.extract_face_and_landmarks(image)
+        face_meta = get_extractor().extract_face_and_landmarks(image)
         
         if not face_meta["detected"]:
             return {
@@ -402,9 +429,9 @@ async def predict_frame(payload: FramePayload = Body(...)):
         face_np = face_meta["face_np"]
         
         # Spatial inference
-        real_p, fake_p, pred, conf = ensemble.predict_single(face_img, use_tta=False)
+        real_p, fake_p, pred, conf = get_ensemble().predict_single(face_img, use_tta=False)
         spectral_data = calculate_spectral_analysis(face_np)
-        iris_data = iris_engine.analyze_eyes(image, face_meta.get("landmarks", []))
+        iris_data = get_iris_engine().analyze_eyes(image, face_meta.get("landmarks", []))
         
         # Check active learning feedback
         hash_data = compute_cryptographic_and_perceptual_hashes(face_np)
@@ -431,5 +458,10 @@ async def predict_frame(payload: FramePayload = Body(...)):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-# Mount static frontend
-app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
+# Mount static frontend if directory exists
+_static_dir = Path(__file__).resolve().parent.parent / "frontend" / "static"
+if _static_dir.exists():
+    try:
+        app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+    except Exception:
+        pass

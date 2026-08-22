@@ -4,10 +4,11 @@ transformers
 fastapi
 uvicorn
 python-multipart
-opencv-python
+opencv-python-headless
 facenet-pytorch
 grad-cam
 pillow
 requests
 numpy
 scipy
+
