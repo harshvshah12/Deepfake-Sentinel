@@ -1,4 +1,4 @@
-﻿# 🛡️ DEEPFAKE SENTINEL (v3.1)
+# 🛡️ DEEPFAKE SENTINEL (v3.1)
 ### Dual-Domain Neural XAI, Biometric Iris HUD & Multimodal Gemini Forensic Platform
 
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C.svg?logo=pytorch)](https://pytorch.org/)
@@ -8,6 +8,14 @@
 [![Three.js](https://img.shields.io/badge/Three.js-r128-black.svg?logo=three.js)](https://threejs.org/)
 [![Chart.js](https://img.shields.io/badge/Chart.js-v4.4-FF6384.svg?logo=chartdotjs)](https://www.chartjs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+<div align="center">
+  <img src="portfolio-assets/screenshot-desktop-hero.png" width="100%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);" alt="Deepfake Sentinel Desktop View" />
+</div>
+<br/>
+<div align="center">
+  <img src="portfolio-assets/screenshot-mobile-hero.png" width="45%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);" alt="Deepfake Sentinel Mobile View" />
+</div>
 
 ---
 
