@@ -357,14 +357,24 @@
                                         <span>Awaiting diagnostic ingestion...</span>
                                     </li>
                                 </ul>
+                            <div id="exp-anomaly-box" class="hidden p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-1.5 font-mono">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                                        <i data-lucide="crosshair" class="w-3.5 h-3.5 text-amber-400"></i> Primary Suspect Manipulation Region:
+                                    </span>
+                                    <span id="exp-anomaly-region-badge" class="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                        Whole Face Composition
+                                    </span>
+                                </div>
+                                <p id="exp-anomaly-details" class="text-xs text-gray-300 font-sans leading-relaxed"></p>
                             </div>
 
                             <div id="exp-gemini-box" class="hidden p-3.5 bg-cyan-950/20 rounded-xl border border-cyan-500/30 space-y-1.5">
                                 <div class="flex items-center gap-2 text-cyan-400 text-[11px] font-mono font-bold">
                                     <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
-                                    <span>Gemini 1.5 Multimodal Forensic Verdict:</span>
+                                    <span>Gemini Multimodal Forensic Vision Verdict:</span>
                                 </div>
-                                <p id="exp-gemini-text" class="text-xs text-cyan-200/90 leading-relaxed font-sans italic"></p>
+                                <p id="exp-gemini-text" class="text-xs text-cyan-200/90 leading-relaxed font-sans"></p>
                             </div>
                         </div>
 
@@ -1914,6 +1924,18 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                         li.innerHTML = `<span class="text-cyan-400 mt-0.5">•</span><span>${finding}</span>`;
                         findingsList.appendChild(li);
                     });
+                }
+
+                const anomalyBox = document.getElementById('exp-anomaly-box');
+                const anomalyBadge = document.getElementById('exp-anomaly-region-badge');
+                const anomalyDetails = document.getElementById('exp-anomaly-details');
+                
+                if (exp.anomaly_localization && exp.anomaly_localization.primary_region && exp.anomaly_localization.primary_region !== "Whole Face Composition") {
+                    anomalyBadge.innerText = exp.anomaly_localization.primary_region;
+                    anomalyDetails.innerText = exp.anomaly_localization.anomaly_details || "Spatial and frequency neural activations isolate distinct artificial generation signatures in this region.";
+                    anomalyBox.classList.remove('hidden');
+                } else {
+                    anomalyBox.classList.add('hidden');
                 }
 
                 const geminiBox = document.getElementById('exp-gemini-box');

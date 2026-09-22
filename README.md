@@ -1,20 +1,79 @@
-# 🛡️ DEEPFAKE SENTINEL (v3.1)
+# 🛡️ DEEPFAKE SENTINEL (v3.2)
 ### Dual-Domain Neural XAI, Biometric Iris HUD & Multimodal Gemini Forensic Platform
 
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C.svg?logo=pytorch)](https://pytorch.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688.svg?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![Transformers](https://img.shields.io/badge/HuggingFace-Transformers-FFD21E.svg?logo=huggingface)](https://huggingface.co/)
-[![Google Gemini](https://img.shields.io/badge/Google_Gemini-3.5_Flash_Vision-8E75B2.svg?logo=google)](https://ai.google.dev/)
-[![Three.js](https://img.shields.io/badge/Three.js-r128-black.svg?logo=three.js)](https://threejs.org/)
-[![Chart.js](https://img.shields.io/badge/Chart.js-v4.4-FF6384.svg?logo=chartdotjs)](https://www.chartjs.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<div align="center">
+
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C.svg?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![HuggingFace](https://img.shields.io/badge/HuggingFace-Transformers-FFD21E.svg?logo=huggingface&logoColor=black)](https://huggingface.co/)
+[![Google Gemini](https://img.shields.io/badge/Google_Gemini-3.5_Flash_Vision-8E75B2.svg?logo=google&logoColor=white)](https://ai.google.dev/)
+[![Three.js](https://img.shields.io/badge/Three.js-WebGL_Cybernetic-000000.svg?logo=three.js&logoColor=white)](https://threejs.org/)
+[![Chart.js](https://img.shields.io/badge/Chart.js-v4.4_Analytics-FF6384.svg?logo=chartdotjs&logoColor=white)](https://www.chartjs.org/)
+[![Playwright Tested](https://img.shields.io/badge/Playwright-E2E_Verified-2EAD33.svg?logo=playwright&logoColor=white)](https://playwright.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-3B82F6.svg)](LICENSE)
+
+<br/>
+
+**Deepfake Sentinel** is an explainable AI (XAI) forensic detection and digital provenance verification system engineered to detect modern generative deepfakes across diffusion models (FLUX.1, Midjourney v6, SDXL), GANs (StyleGAN3), identity swaps (DeepFaceLab, SimSwap), and morphed facial media.
+
+[Explore Architecture](#-system-architecture) • [Live Showcase](#-interactive-portfolio-showcase) • [Dataset Registry](#-comprehensive-dataset-registry) • [Quickstart](#-installation--quickstart)
+
+<br/>
+
+<img src="assets/screenshots/00_full_dashboard_showcase.png" width="100%" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,240,255,0.15); border: 1px solid rgba(0,240,255,0.2);" alt="Deepfake Sentinel Complete Dashboard Showcase" />
+
+</div>
+
+---
+
+## 📸 Interactive Portfolio Showcase
+
+*High-resolution, high-interactivity screenshots captured live in production via Playwright.*
 
 <div align="center">
-  <img src="portfolio-assets/screenshot-desktop-hero.png" width="100%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);" alt="Deepfake Sentinel Desktop View" />
-</div>
+
+### 1. Real-Time Forensic Diagnostic & Multimodal Gemini Reasoning
+<img src="assets/screenshots/02_forensic_analysis_report.png" width="100%" style="border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);" alt="Forensic Analysis Diagnostic Card" />
+<p align="center"><i>Live diagnostic report with Bayesian authenticity confidence, Gemini Vision 1-line description, and pinpoint Primary Anomaly Region badge.</i></p>
+
 <br/>
-<div align="center">
-  <img src="portfolio-assets/screenshot-mobile-hero.png" width="45%" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);" alt="Deepfake Sentinel Mobile View" />
+
+### 2. Grad-CAM Attention Heatmap, 2D Log-FFT Spectrum & Iris Biometrics
+<img src="assets/screenshots/03_gradcam_fft_biometrics.png" width="100%" style="border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);" alt="Grad-CAM Self-Attention, 2D FFT Power Spectrum, Iris Biometrics" />
+<p align="center"><i>Tri-panel visualizer showing self-attention tokens, azimuthal frequency decay curves, and bilateral corneal specular reflection symmetry.</i></p>
+
+<br/>
+
+### 3. C2PA Cryptographic Provenance, Watermarks & Continuous Feedback Memory
+<img src="assets/screenshots/04_provenance_c2pa_audit.png" width="100%" style="border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);" alt="C2PA Provenance and Active Learning Memory" />
+<p align="center"><i>Cryptographic metadata inspector verifying C2PA digital signatures, Google SynthID watermark detection, and 64-bit pHash feedback memory.</i></p>
+
+<br/>
+
+### 4. Specimen Benchmark Gallery & Multi-Distribution Evaluation
+<img src="assets/screenshots/05_specimen_benchmarks_gallery.png" width="100%" style="border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);" alt="Specimen Benchmark Gallery" />
+<p align="center"><i>Pre-loaded benchmark gallery spanning authentic portraits, StyleGAN3 synthetics, Midjourney/SDXL diffusion, and FaceForensics++ morphs.</i></p>
+
+<br/>
+
+### 5. Multi-Frame Temporal Video Deepfake Inspector & Cybernetic Webcam Stream
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshots/06_temporal_video_analysis.png" style="border-radius: 8px;" alt="Temporal Video Deepfake Analysis" /></td>
+    <td width="50%"><img src="assets/screenshots/07_live_webcam_stream.png" style="border-radius: 8px;" alt="Live Cybernetic Webcam Stream" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Multi-Frame Video Forensics</b></td>
+    <td align="center"><b>Live Cybernetic Webcam Stream</b></td>
+  </tr>
+</table>
+
+<br/>
+
+### 6. Fast Gradient Sign Method (FGSM) Adversarial Stress Testing
+<img src="assets/screenshots/08_adversarial_stress_testing.png" width="100%" style="border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);" alt="FGSM Adversarial Robustness Testing" />
+<p align="center"><i>Interactive adversarial robustness module evaluating perturbation resilience across adjustable epsilon ranges.</i></p>
+
 </div>
 
 ---
@@ -98,7 +157,7 @@ Unlike conventional single-backbone black-box classifiers that struggle on cross
 
 ### 2. Clone the Repository
 ```bash
-git clone https://github.com/HarshvShah/Deepfake-Sentinel.git
+git clone https://github.com/harshvshah12/Deepfake-Sentinel.git
 cd Deepfake-Sentinel
 ```
 

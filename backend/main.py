@@ -75,7 +75,7 @@ class FeedbackPayload(BaseModel):
     sha256: str
     phash: str
     corrected_label: str
-    original_prediction: str
+    original_prediction: Optional[str] = "Unknown"
     metadata: Optional[Dict[str, Any]] = None
 
 class GeminiTestPayload(BaseModel):
@@ -288,10 +288,46 @@ async def predict(
             synthid_data = detect_synthid_watermark(face_np, contents)
             visual_watermark_data = detect_visual_watermarks_and_logos(np.array(image), contents)
             hash_data = compute_cryptographic_and_perceptual_hashes(face_np, contents)
-            
-            # 6. Active Learning Feedback Memory Override Check
             feedback_override = lookup_feedback_memory(hash_data.get("sha256"), hash_data.get("phash"))
             
+            # Multi-Modal Forensic Evidence Bayesian Fusion
+            iris_score = float(iris_data.get("iris_anomaly_score", 0.25))
+            spectral_score = float(spectral_data.get("anomaly_score", 0.25))
+            color_score = float(color_data.get("color_anomaly_index", 0.20))
+            
+            # Initial base spatial ensemble score
+            fused_fake_raw = (
+                (vit_fake_prob * 0.40) +
+                (eff_fake_prob * 0.30) +
+                (spectral_score * 0.15) +
+                (iris_score * 0.10) +
+                (color_score * 0.05)
+            )
+
+            # Grad-CAM XAI Heatmap
+            try:
+                heatmap = generate_heatmap(ensemble, input_tensor, face_np)
+            except Exception:
+                heatmap = face_np
+                
+            face_resized = cv2.resize(face_np, (224, 224))
+            full_b64 = f"data:image/jpeg;base64,{base64.b64encode(contents).decode('utf-8')}"
+            
+            preliminary_payload = {
+                "media_type": "image",
+                "filename": filename,
+                "fake_probability": float(np.clip(fused_fake_raw, 0.001, 0.999)),
+                "spectral_anomaly_score": spectral_data["anomaly_score"],
+                "iris_biometrics": iris_data,
+                "color_forensics": color_data,
+                "face_b64": np_to_b64(face_resized),
+                "full_image_b64": full_b64
+            }
+
+            # Generate natural language explainability report & multimodal vision verdict
+            explanation = generate_forensic_explanation(preliminary_payload, gemini_key=gemini_key)
+            
+            # 6. Unified Decision Fusion with Multimodal Reasoning & Ground Truth Memory
             if feedback_override:
                 corrected_verdict = feedback_override.get("corrected_label", "Real")
                 if corrected_verdict == "Real":
@@ -304,8 +340,9 @@ async def predict(
                     prediction = "Fake"
                 confidence = 0.999
                 feedback_applied = True
+                explanation["summary"] = f"Calibrated Human Feedback Memory Applied: Specimen was previously corrected and permanently recorded as {prediction}."
+                explanation["key_findings"].insert(0, f"Active Learning Memory Match: Perceptual pHash '{hash_data.get('phash')}' matched user verified ground truth.")
             elif visual_watermark_data.get("watermark_detected"):
-                # Hard override if visual AI logo / Gemini star / DALL-E marker is detected
                 fused_fake_prob = 0.999
                 fused_real_prob = 0.001
                 prediction = "Fake"
@@ -313,25 +350,23 @@ async def predict(
                 feedback_applied = False
             else:
                 feedback_applied = False
-                # Multi-Modal Forensic Evidence Bayesian Fusion
-                iris_score = float(iris_data.get("iris_anomaly_score", 0.25))
-                spectral_score = float(spectral_data.get("anomaly_score", 0.25))
-                color_score = float(color_data.get("color_anomaly_index", 0.20))
+                gemini_score = explanation.get("gemini_fake_score")
                 
-                # Multi-modal weighted fusion: 40% ViT + 30% EffNet + 15% Spectral + 10% Iris + 5% Color
-                fused_fake_raw = (
-                    (vit_fake_prob * 0.40) +
-                    (eff_fake_prob * 0.30) +
-                    (spectral_score * 0.15) +
-                    (iris_score * 0.10) +
-                    (color_score * 0.05)
-                )
+                if gemini_score is not None:
+                    # Multimodal LLM Vision Expert Fusion (55% Gemini Vision + 20% ViT + 15% EffNet + 5% Spectral + 5% Iris)
+                    fused_fake_raw = (
+                        (gemini_score * 0.55) +
+                        (vit_fake_prob * 0.20) +
+                        (eff_fake_prob * 0.15) +
+                        (spectral_score * 0.05) +
+                        (iris_score * 0.05)
+                    )
                 
                 # Direct Provenance & SynthID Modulation
                 if synthid_data.get("synthid_detected") or provenance_data.get("ai_software_detected"):
-                    fused_fake_raw = max(fused_fake_raw, 0.92)
+                    fused_fake_raw = max(fused_fake_raw, 0.94)
                 elif c2pa_data.get("c2pa_manifest_detected"):
-                    fused_fake_raw = min(fused_fake_raw, 0.08)
+                    fused_fake_raw = min(fused_fake_raw, 0.06)
                     
                 fused_fake_prob = float(np.clip(fused_fake_raw, 0.001, 0.999))
                 fused_real_prob = round(1.0 - fused_fake_prob, 4)
@@ -339,18 +374,8 @@ async def predict(
                 prediction = "Fake" if fused_fake_prob > 0.45 else "Real"
                 confidence = float(max(fused_real_prob, fused_fake_prob))
 
-            # Grad-CAM XAI Heatmap
-            try:
-                heatmap = generate_heatmap(ensemble, input_tensor, face_np)
-            except Exception:
-                heatmap = face_np
-                
-            face_resized = cv2.resize(face_np, (224, 224))
-            
             # Unified Authenticity Confidence Index (0-100%)
             authenticity_index = round(fused_real_prob * 100, 1)
-            
-            full_b64 = f"data:image/jpeg;base64,{base64.b64encode(contents).decode('utf-8')}"
             
             response_payload = {
                 "media_type": "image",
@@ -381,15 +406,9 @@ async def predict(
                 "face_b64": np_to_b64(face_resized),
                 "full_image_b64": full_b64,
                 "heatmap_b64": np_to_b64(heatmap),
-                "fft_b64": np_to_b64(fft_spectrum)
+                "fft_b64": np_to_b64(fft_spectrum),
+                "explanation": explanation
             }
-
-            # Generate natural language explainability report
-            explanation = generate_forensic_explanation(response_payload, gemini_key=gemini_key)
-            if feedback_applied:
-                explanation["summary"] = f"Calibrated Human Feedback Memory Applied: Specimen was previously corrected and permanently recorded as {prediction}."
-                explanation["key_findings"].insert(0, f"Active Learning Memory Match: Perceptual pHash '{hash_data.get('phash')}' matched user verified ground truth.")
-            response_payload["explanation"] = explanation
             
             return response_payload
     except Exception as e:

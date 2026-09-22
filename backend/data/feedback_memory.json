@@ -78,5 +78,25 @@
     "metadata": {
       "confirmed_by_user": true
     }
+  },
+  "483ad327f6a9dfb43522a331d0a9eb826ec7ab0cd784c0443383185c2dc7641f": {
+    "sha256": "483ad327f6a9dfb43522a331d0a9eb826ec7ab0cd784c0443383185c2dc7641f",
+    "phash": "dfe1a0c79756ceda",
+    "corrected_label": "Real",
+    "original_prediction": "Real",
+    "confidence": 1.0,
+    "metadata": {
+      "confirmed_by_user": true
+    }
+  },
+  "d6576380026204282e1ba0981aa255a8b5c9050d9a9e9b19a1ba544ea3713389": {
+    "sha256": "d6576380026204282e1ba0981aa255a8b5c9050d9a9e9b19a1ba544ea3713389",
+    "phash": "da702b21760b1e58",
+    "corrected_label": "Real",
+    "original_prediction": "Fake",
+    "confidence": 1.0,
+    "metadata": {
+      "notes": "User verified genuine portrait with beauty softening filter"
+    }
   }
 }

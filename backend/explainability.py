@@ -81,9 +81,46 @@ def generate_forensic_explanation(payload: Dict[str, Any], gemini_key: Optional[
     # --- 6. Optional Gemini API Reasoning ---
     active_key = (gemini_key or "").strip() or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     gemini_insight = None
+    gemini_verdict = None
+    gemini_fake_score = None
+    anomaly_localization = {
+        "primary_region": "Whole Face Composition",
+        "region_box": None,
+        "anomaly_details": "Analyzed across spatial neural activations and 2D Fourier spectral frequency distribution."
+    }
+    
     if active_key:
         try:
             gemini_insight = call_gemini_forensic_reasoner(payload, active_key)
+            if gemini_insight:
+                # Parse Primary Anomaly Region, Box, and Verdict if returned by Gemini
+                for line in gemini_insight.split("\n"):
+                    line_s = line.strip()
+                    line_l = line_s.lower()
+                    
+                    if line_l.startswith("forensic verdict:") or "forensic verdict:" in line_l:
+                        after_colon = line_s.split(":", 1)[1].strip()
+                        verdict_token = after_colon.replace("*", "").replace(".", "").strip().upper()
+                        if verdict_token.startswith("REAL") or verdict_token.startswith("AUTHENTIC") or verdict_token.startswith("GENUINE"):
+                            gemini_verdict = "Real"
+                            gemini_fake_score = 0.04
+                        elif verdict_token.startswith("FAKE") or verdict_token.startswith("SYNTHETIC") or verdict_token.startswith("AI") or verdict_token.startswith("MANIPULATED"):
+                            gemini_verdict = "Fake"
+                            gemini_fake_score = 0.98
+                    elif line_l.startswith("primary anomaly region:") or line_l.startswith("anomaly region:"):
+                        anomaly_localization["primary_region"] = line_s.split(":", 1)[1].strip()
+                    elif line_l.startswith("anomaly explanation:"):
+                        anomaly_localization["anomaly_details"] = line_s.split(":", 1)[1].strip()
+                    elif line_l.startswith("anomaly details:"):
+                        anomaly_localization["anomaly_details"] = line_s.split(":", 1)[1].strip()
+                    elif line_l.startswith("region box:"):
+                        try:
+                            box_str = line_s.split(":", 1)[1].strip().replace("[", "").replace("]", "")
+                            coords = [int(float(c.strip())) for c in box_str.split(",") if c.strip()]
+                            if len(coords) == 4:
+                                anomaly_localization["region_box"] = coords
+                        except Exception:
+                            pass
         except Exception as e:
             gemini_insight = f"Gemini API Notice: {str(e)}"
 
@@ -93,27 +130,30 @@ def generate_forensic_explanation(payload: Dict[str, Any], gemini_key: Optional[
         "key_findings": findings,
         "authenticity_confidence_index": round(real_p * 100, 1),
         "ai_generation_index": round(fake_p * 100, 1),
-        "gemini_reasoning": gemini_insight
+        "gemini_reasoning": gemini_insight,
+        "gemini_verdict": gemini_verdict,
+        "gemini_fake_score": gemini_fake_score,
+        "anomaly_localization": anomaly_localization
     }
 
 def call_gemini_forensic_reasoner(payload: Dict[str, Any], api_key: str) -> Optional[str]:
     """
-    Calls Google Gemini Multimodal Vision API to describe the visual specimen in one line
-    and provide an expert visual judgment on whether it feels REAL or FAKE.
+    Calls Google Gemini Multimodal Vision API to describe the visual specimen in one line,
+    provide an expert visual judgment on whether it feels REAL or FAKE, and pinpoint the exact
+    suspect region/coordinates responsible for the verdict.
     """
     cleaned_key = api_key.strip().replace('"', '').replace("'", "")
     models = [
-        "gemini-3.5-flash",
-        "gemini-3.6-flash",
         "gemini-3.1-flash-lite",
+        "gemini-2.5-flash",
+        "gemini-3.5-flash",
         "gemini-3.7-flash",
-        "gemini-flash-latest",
-        "gemini-2.5-flash"
+        "gemini-flash-latest"
     ]
     
     parts = []
     
-    # 1. Attach Visual Image Data (Prefer full uncropped image to catch corner logos/watermarks)
+    # 1. Attach Visual Image Data (Prefer full uncropped image to catch corner logos/watermarks and peripheral artifacts)
     img_b64 = payload.get("full_image_b64") or payload.get("face_b64")
     if img_b64:
         raw_b64 = img_b64.split(",")[-1] if "," in img_b64 else img_b64
@@ -127,13 +167,13 @@ def call_gemini_forensic_reasoner(payload: Dict[str, Any], api_key: str) -> Opti
     # 2. Forensic Vision & Telemetry Prompt
     prompt_text = (
         "You are an Elite Forensic Vision Specialist & AI Watermark Detection System.\n"
-        "Carefully inspect this full uncropped image for authenticity:\n"
-        "1. AI Watermarks & Logos: Look specifically for Google Gemini 4-pointed sparkle/star icons, DALL-E color badges, Bing Creator icons, Adobe Firefly stamps, TikTok AI markers, or watermark overlays anywhere on the image or in the corners. If ANY AI logo/watermark is present, you MUST state DETECTED.\n"
-        "2. Visual & Generative Anomalies: Inspect skin texture (airbrushed plastic sheen), iris catchlights/pupil asymmetry, ear/hair blending, impossible lighting physics, hands/fingers, and background distortions.\n\n"
-        "Provide your analysis in exactly this format:\n\n"
+        "Carefully inspect this full uncropped image for authenticity, manipulation, morphing, or AI generation.\n\n"
+        "Provide your forensic analysis in this exact structured format:\n\n"
         "Visual Description: [Describe in one clear line who/what is depicted in the image, their pose, setting, and background]\n\n"
-        "AI Logo / Watermark: [State DETECTED: <Name/Location of logo or watermark> or None Visible]\n\n"
-        "Forensic Verdict: [State **REAL** or **FAKE**, followed by 1-2 authoritative sentences explaining your judgment, citing any visible logos, skin texture, lighting, and anatomy]\n\n"
+        "Forensic Verdict: [State **REAL** or **FAKE**, followed by 1-2 authoritative sentences explaining your judgment, citing visible logos, skin texture, lighting, and anatomy]\n\n"
+        "Primary Anomaly Region: [State the exact anatomical or visual region responsible for the verdict, e.g. 'Left Eye Corneal Catchlight', 'Nasolabial Skin Micro-Smoothing', 'Jawline Blending Seam', 'Ear-Hair Interface', 'Teeth Alignment', 'Background Frequency Distortion', or 'Organic Sensor Texture']\n\n"
+        "Region Box: [ymin, xmin, ymax, xmax] normalized as integer percentages 0-100 covering that specific region\n\n"
+        "Anomaly Explanation: [Explain specifically what physical or optical rule is broken or verified in that exact region]\n\n"
         f"Automated Model Diagnostic Reference:\n"
         f"- Spatial Ensemble Probability: {payload.get('fake_probability', 0.5)*100:.1f}% Fake\n"
         f"- Spectral Anomaly Score: {payload.get('spectral_anomaly_score')}\n"
@@ -153,7 +193,6 @@ def call_gemini_forensic_reasoner(payload: Dict[str, Any], api_key: str) -> Opti
     
     last_error = ""
     for model_name in models:
-        # Try both query param and header formats
         urls = [
             f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={cleaned_key}",
             f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
@@ -179,10 +218,10 @@ def call_gemini_forensic_reasoner(payload: Dict[str, Any], api_key: str) -> Opti
                 err_text = e.read().decode("utf-8", errors="ignore")
                 try:
                     err_json = json.loads(err_text)
-                    last_error = err_json.get("error", {}).get("message", f"HTTP {e.code}")
+                    last_error = err_json.get("error", {}).get("message", err_text[:120])
                 except Exception:
-                    last_error = f"HTTP {e.code}: {err_text[:120]}"
+                    last_error = f"HTTP {e.code}: {e.reason}"
             except Exception as e:
                 last_error = str(e)
                 
-    raise RuntimeError(f"Gemini API call failed: {last_error}")
+    return f"Gemini Analysis Unavailable ({last_error})"
