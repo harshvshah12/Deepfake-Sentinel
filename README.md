@@ -16,13 +16,33 @@
 
 **Deepfake Sentinel** is an explainable AI (XAI) forensic detection and digital provenance verification system engineered to detect modern generative deepfakes across diffusion models (FLUX.1, Midjourney v6, SDXL), GANs (StyleGAN3), identity swaps (DeepFaceLab, SimSwap), and morphed facial media.
 
-[Explore Architecture](#-system-architecture) • [Live Showcase](#-interactive-portfolio-showcase) • [Dataset Registry](#-comprehensive-dataset-registry) • [Quickstart](#-installation--quickstart)
+[Documentation Suite](#-comprehensive-documentation-suite) • [Live Showcase](#-interactive-portfolio-showcase) • [System Architecture](#-system-architecture) • [Dataset Registry](#-comprehensive-dataset-registry) • [Quickstart](#-installation--quickstart)
 
 <br/>
 
 <img src="assets/screenshots/00_full_dashboard_showcase.png" width="100%" style="border-radius: 12px; box-shadow: 0 8px 24px rgba(0,240,255,0.15); border: 1px solid rgba(0,240,255,0.2);" alt="Deepfake Sentinel Complete Dashboard Showcase" />
 
 </div>
+
+---
+
+## 📚 Comprehensive Documentation Suite
+
+| Document | Focus & Content | Target Audience |
+| :--- | :--- | :--- |
+| [**PROJECT_EXPLANATION.md**](PROJECT_EXPLANATION.md) | End-to-end plain-language system guide & feature walkthrough | Recruiters, Product Managers, Evaluators |
+| [**EXPLAINER_FOR_TEACHER.md**](EXPLAINER_FOR_TEACHER.md) | Oral defense, viva preparation & top 10 examiner Q&A answers | University Evaluators, Academic Examiners |
+| [**architecture.md**](architecture.md) | Complete system architecture specification, subsystem diagrams & dataflow | System Architects, Senior Engineers |
+| [**math.md**](math.md) | Mathematical formulations (ViT self-attention, 2D FFT, Focal Loss, pHash, FGSM) | ML Researchers, Applied Mathematicians |
+| [**ml_pipeline.md**](ml_pipeline.md) | End-to-end ML data ingestion, normalization, training & active memory loop | ML Engineers, Data Scientists |
+| [**model_comparison.md**](model_comparison.md) | Benchmark comparison leaderboard, ablation study & cross-generator metrics | Evaluators, AI Researchers |
+| [**dataset.md**](dataset.md) | Registry of 2,000 verified forensic specimens & provenance sources | Data Auditors, Researchers |
+| [**api.md**](api.md) | Complete OpenAPI / REST endpoint specifications & sample curl payloads | Backend & Full-Stack Developers |
+| [**methodology.md**](methodology.md) | Scientific forensic methodology, hypotheses & zero-leakage protocol | Research Reviewers, Forensic Auditors |
+| [**testing.md**](testing.md) | Playwright E2E UI testing, integration suite & FGSM robustness | QA Engineers, Security Auditors |
+| [**limitations.md**](limitations.md) | Transparent engineering analysis of edge cases & boundary conditions | Risk Teams, Production Engineers |
+| [**future_scope.md**](future_scope.md) | Strategic engineering roadmap, WebGPU client-side inference & lip-sync | Core Contributors, Roadmap Planners |
+| [**PRD.md**](PRD.md) | Complete Product Requirements Document & functional specifications | Technical Product Managers |
 
 ---
 
