@@ -42,6 +42,7 @@
 | [**testing.md**](testing.md) | Playwright E2E UI testing, integration suite & FGSM robustness | QA Engineers, Security Auditors |
 | [**limitations.md**](limitations.md) | Transparent engineering analysis of edge cases & boundary conditions | Risk Teams, Production Engineers |
 | [**future_scope.md**](future_scope.md) | Strategic engineering roadmap, WebGPU client-side inference & lip-sync | Core Contributors, Roadmap Planners |
+| [**IEEE_RESEARCH_PAPER.md**](IEEE_RESEARCH_PAPER.md) | Publication-grade academic IEEE research paper with citations & math | Researchers, Professors, Conference Reviewers |
 | [**PRD.md**](PRD.md) | Complete Product Requirements Document & functional specifications | Technical Product Managers |
 
 ---
