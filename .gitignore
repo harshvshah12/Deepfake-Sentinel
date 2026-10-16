@@ -31,3 +31,4 @@ tests/screenshots/
 # Cache directories
 .cache/
 .pytest_cache/
+*.bak

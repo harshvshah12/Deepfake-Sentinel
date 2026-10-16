@@ -51,12 +51,11 @@ class EnsembleModel(nn.Module):
         """Default forward executes EfficientNet-B3 for CAM/FGSM pipelines."""
         return self.eff_model(x)
 
-    def predict_single(self, face_img: Image.Image, use_tta: bool = True, temperature: float = 1.0) -> Tuple[float, float, str, float]:
+    def predict_backbones(self, face_img: Image.Image, use_tta: bool = True, temperature: float = 1.0) -> Tuple[float, float]:
         """
-        Executes dual-backbone multi-modal inference with Test-Time Augmentation (TTA).
-        Returns: (real_prob, fake_prob, prediction, confidence)
+        Executes dual-backbone inference and returns (eff_fake_prob, vit_fake_prob).
         """
-        # --- Backbone 1: EfficientNet-B3 ---
+        # Backbone 1: EfficientNet-B3
         t1 = self.eff_transform(face_img).unsqueeze(0).to(self.device)
         with torch.no_grad():
             logit1 = self.eff_model(t1).item()
@@ -69,7 +68,7 @@ class EnsembleModel(nn.Module):
                 eff_logit = logit1
             eff_fake_prob = torch.sigmoid(torch.tensor(eff_logit / max(0.1, temperature))).item()
 
-        # --- Backbone 2: ViT-B/16 ---
+        # Backbone 2: ViT-B/16
         v_in = self.processor(images=face_img, return_tensors='pt')
         with torch.no_grad():
             vit_logits1 = self.vit_model(pixel_values=v_in['pixel_values'].to(self.device)).logits
@@ -83,15 +82,28 @@ class EnsembleModel(nn.Module):
             vit_probs = F.softmax(vit_logits / max(0.1, temperature), dim=1)[0]
             vit_fake_prob = float(vit_probs[1].item())
 
-        # --- Calibrated Dual-Domain Fusion ---
-        # EfficientNet-B3 (60% weight, high generalizability) + ViT (40% weight, fine boundary detection)
-        fake_prob = (eff_fake_prob * 0.60) + (vit_fake_prob * 0.40)
-        real_prob = 1.0 - fake_prob
-        
-        # Decision Boundary
-        prediction = "Fake" if fake_prob > 0.48 else "Real"
-        confidence = float(max(real_prob, fake_prob))
-        
+        return eff_fake_prob, vit_fake_prob
+
+    def predict_single(self, face_img: Image.Image, use_tta: bool = True, temperature: float = 1.0) -> Tuple[float, float, str, float]:
+        """
+        Executes dual-backbone multi-modal inference with Test-Time Augmentation (TTA).
+        Delegates decision logic to unified ForensicDecisionEngine.
+        Returns: (real_prob, fake_prob, prediction, confidence)
+        """
+        from backend.fusion import ForensicDecisionEngine
+
+        eff_fake_prob, vit_fake_prob = self.predict_backbones(face_img, use_tta=use_tta, temperature=temperature)
+        fusion_result = ForensicDecisionEngine.fuse_evidence(
+            eff_fake_prob=eff_fake_prob,
+            vit_fake_prob=vit_fake_prob,
+            face_detected=True
+        )
+
+        real_prob = fusion_result["real_probability"]
+        fake_prob = fusion_result["fake_probability"]
+        prediction = fusion_result["prediction"]
+        confidence = fusion_result["confidence"]
+
         return round(real_prob, 4), round(fake_prob, 4), prediction, round(confidence, 4)
 
     def predict_batch(self, face_imgs: List[Image.Image], use_tta: bool = True) -> List[Dict[str, Any]]:

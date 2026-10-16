@@ -10,8 +10,10 @@ from typing import Dict, Any, Tuple, Optional
 
 class SiameseIrisNetwork(nn.Module):
     """
+    EXPERIMENTAL RESEARCH PROTOTYPE:
     Lightweight Siamese Neural Network to extract bilateral iris & periocular feature embeddings.
     Evaluates physiological cross-eye coherence and feature distance.
+    NOTE: Checkpoint weights are currently uncalibrated; output serves as experimental telemetry.
     """
     def __init__(self):
         super(SiameseIrisNetwork, self).__init__()
@@ -52,7 +54,7 @@ class IrisBiometricEngine:
     - 1. Pupil Boundary Ellipticity & Circularity Index
     - 2. Corneal Specular Highlight Bilateral Consistency (ICASSP Hu et al.)
     - 3. Bilateral Sclera Chrominance Variance (L*a*b*)
-    - 4. Siamese Iris Deep Feature Coherence
+    - 4. Experimental Siamese Iris Deep Feature Coherence (Telemetry Only)
     """
     def __init__(self, device='cpu'):
         self.device = torch.device(device)

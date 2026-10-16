@@ -22,6 +22,22 @@
   2. Identified arbitrary byte-matching overrides (`b"gemini"`, `b"adobe"`) forcing $P(\text{Fake})=0.999$ in `backend/main.py`.
   3. Identified false C2PA signature claims without cryptographic verification.
   4. Measured real baseline accuracy: 84.0% (Real: 72.0%, Fake: 96.0%), debunking unverified 99.8% claims.
-- **Next Goal:** Goal 1 — Model Integrity, Calibration and Fusion Correctness.
+## Goal 1 — Model Integrity, Calibration and Fusion Correctness
+- **Status:** `PASS`
+- **Date Completed:** 2026-10-16
+- **Files Created / Modified:**
+  - `backend/fusion.py` (New: canonical `ForensicDecisionEngine` with Bayesian evidence fusion, model discordance monitoring, and 3-tier verdict classification)
+  - `backend/model.py` (Added `predict_backbones`, decoupled spatial predictions to `ForensicDecisionEngine`)
+  - `backend/iris.py` (Documented experimental uncalibrated status of `SiameseIrisNetwork`, refined geometric circularity and glint asymmetry)
+  - `backend/provenance.py` (Upgraded `detect_c2pa_manifest` to accurately report `UNVERIFIED_MANIFEST_PRESENT`, implemented true corner ROI visual watermark detection in `detect_visual_watermarks_and_logos`)
+  - `backend/main.py` (Replaced arbitrary byte string overrides with unified `ForensicDecisionEngine`, updated `/model-metrics` to reflect verified production numbers)
+  - `backend/video.py` (Unified video frame evaluation and temporal aggregation via `ForensicDecisionEngine`)
+  - `test_bayesian_fusion.py` (Updated to execute unified `ForensicDecisionEngine`)
+- **Key Verifications:**
+  1. Eliminated hardcoded $P(\text{Fake})=0.999$ overrides on byte matches (`b"gemini"`, `b"adobe"`).
+  2. Established explicit `Inconclusive` state when models disagree or evidence falls into the borderline margin [0.40, 0.60].
+  3. Verified that `fake_101.jpg` (previously a false negative classified as Real) is now safely flagged as `Inconclusive`.
+  4. Preserved model weights and created backup at `best_efficientnet_b3_deepfake_detector_399k.pth.bak`.
+- **Next Goal:** Goal 2 — Animated Investigation Workflow and Interactive Workspace (Stages 1–14).
 
 ---

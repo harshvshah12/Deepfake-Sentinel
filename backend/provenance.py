@@ -102,30 +102,35 @@ def parse_exif_metadata(image_pil: Image.Image) -> Dict[str, Any]:
 
 def detect_c2pa_manifest(file_bytes: bytes) -> Dict[str, Any]:
     """
-    Decodes and validates Coalition for Content Provenance and Authenticity (C2PA) cryptographic manifests.
+    Decodes and audits Coalition for Content Provenance and Authenticity (C2PA) manifests.
+    Delineates between raw manifest header presence and full cryptographic signature trust-chain verification.
     """
     c2pa_signatures = [b"c2pa", b"c2bi", b"jumb", b"urn:c2pa", b"c2cl"]
-    has_c2pa = any(sig in file_bytes for sig in c2pa_signatures)
+    has_c2pa = any(sig in file_bytes for sig in c2pa_signatures) if file_bytes else False
     
     claim_generator = "None"
     signature_issuer = "None"
-    is_verified = False
     
     if has_c2pa:
-        is_verified = True
         if b"c2pa.action" in file_bytes:
-            claim_generator = "C2PA Verified Capture Device / Creator Tool"
-            signature_issuer = "C2PA Compliant Hardware Authority"
+            claim_generator = "C2PA Capture Device / Creator Assertion Stream"
+            signature_issuer = "Hardware Device Trust Anchor (Manifest Present - Signature Unverified)"
         else:
-            claim_generator = "C2PA Provenance Manifest v1.3"
-            signature_issuer = "Content Authenticity Trust Anchor"
+            claim_generator = "C2PA Provenance Manifest v1.3 Container"
+            signature_issuer = "Self-Signed / Unverified Content Authority"
+            
+        validation_status = "UNVERIFIED_MANIFEST_PRESENT"
+        c2pa_score = 0.72
+    else:
+        validation_status = "NO_MANIFEST"
+        c2pa_score = 0.50
             
     return {
         "c2pa_manifest_detected": has_c2pa,
         "claim_generator": claim_generator,
         "signature_issuer": signature_issuer,
-        "validation_status": "VALID_SIGNATURE" if is_verified else "NO_MANIFEST",
-        "c2pa_score": 0.98 if is_verified else 0.50
+        "validation_status": validation_status,
+        "c2pa_score": c2pa_score
     }
 
 def detect_synthid_watermark(image_np: np.ndarray, file_bytes: bytes = b"") -> Dict[str, Any]:
@@ -215,18 +220,60 @@ def detect_synthid_watermark(image_np: np.ndarray, file_bytes: bytes = b"") -> D
 
 def detect_visual_watermarks_and_logos(image_np: np.ndarray, file_bytes: bytes = b"") -> Dict[str, Any]:
     """
-    Scans image metadata, file bytes, and manifest streams for cryptographic/binary AI watermarks,
-    including Google SynthID, Imagen/Gemini markers, C2PA synthetic media assertions, and Adobe/DALL-E tags.
+    Dual-layer watermark audit:
+    1. Spatial Visual Watermark Inspection: Scans peripheral corners for generator stamps, high-contrast logos, or watermark overlays.
+    2. Manifest Stream Inspection: Audits binary bytes for explicit generative framework stamps.
     """
+    h, w = image_np.shape[:2]
+    visual_detected = False
+    visual_location = "None"
+    visual_confidence = 0.0
+    visual_bbox = None
+
+    # --- 1. Visual Corner Pixel Audit (Bottom-Right and Bottom-Left Quadrants) ---
+    try:
+        gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY) if len(image_np.shape) == 3 else image_np
+        corner_h, corner_w = int(h * 0.18), int(w * 0.22)
+        
+        # Candidate regions: bottom-right (most common for DALL-E/Midjourney/TikTok), bottom-left
+        corners = {
+            "Bottom-Right Corner": (h - corner_h, h, w - corner_w, w),
+            "Bottom-Left Corner": (h - corner_h, h, 0, corner_w)
+        }
+        
+        for name, (y1, y2, x1, x2) in corners.items():
+            roi = gray[y1:y2, x1:x2]
+            if roi.size < 100:
+                continue
+                
+            # High-contrast edge detection for discrete logos or text stamps
+            edges = cv2.Canny(roi, 100, 200)
+            edge_density = float(np.sum(edges > 0)) / float(roi.size)
+            
+            # Check for localized geometric glyph/watermark cluster
+            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+                if 80 < area < (roi.size * 0.40):
+                    bx, by, bw, bh = cv2.boundingRect(cnt)
+                    aspect = float(bw) / max(1, bh)
+                    if 0.3 < aspect < 3.5:
+                        visual_detected = True
+                        visual_location = name
+                        visual_confidence = round(float(np.clip(edge_density * 8.0, 0.65, 0.95)), 3)
+                        visual_bbox = [int(y1 + by), int(x1 + bx), int(y1 + by + bh), int(x1 + bx + bw)]
+                        break
+            if visual_detected:
+                break
+    except Exception:
+        pass
+
+    # --- 2. Manifest/Byte Stream Inspection ---
     signatures = [
         (b"synthid", "Google SynthID Digital Watermark"),
-        (b"SynthID", "Google SynthID Digital Watermark"),
-        (b"deepmind", "Google DeepMind Imagen Stamp"),
-        (b"DeepMind", "Google DeepMind Imagen Stamp"),
+        (b"deepmind", "Google DeepMind Imagen Provenance"),
         (b"imagen", "Google Imagen Synthetic Identifier"),
-        (b"Imagen", "Google Imagen Synthetic Identifier"),
-        (b"gemini", "Google Gemini AI Watermark"),
-        (b"Gemini", "Google Gemini AI Watermark"),
+        (b"gemini", "Google Gemini AI Metadata"),
         (b"c2pa.synthetic", "C2PA Synthetic Media Assertion"),
         (b"c2pa.ai_generated", "C2PA AI-Generated Watermark"),
         (b"adobe:generator", "Adobe Generative AI Watermark"),
@@ -236,19 +283,23 @@ def detect_visual_watermarks_and_logos(image_np: np.ndarray, file_bytes: bytes =
         (b"dall-e", "OpenAI DALL-E Generative Signature")
     ]
     
+    metadata_match = None
     if file_bytes:
         for sig, name in signatures:
             if sig in file_bytes:
-                return {
-                    "watermark_detected": True,
-                    "watermark_type": name,
-                    "location": "Cryptographic Metadata / Header Stream",
-                    "confidence": 0.99
-                }
-                
+                metadata_match = name
+                break
+
+    is_overall_hit = visual_detected or (metadata_match is not None)
+    
     return {
-        "watermark_detected": False,
-        "watermark_type": "No Watermark Signature Found",
-        "location": "None",
-        "confidence": 0.0
+        "watermark_detected": is_overall_hit,
+        "visual_watermark_detected": visual_detected,
+        "visual_location": visual_location,
+        "visual_bbox": visual_bbox,
+        "visual_confidence": visual_confidence,
+        "metadata_signature_detected": metadata_match is not None,
+        "watermark_type": metadata_match or ("Visual Stamp / Logo" if visual_detected else "No Watermark Signature Found"),
+        "location": visual_location if visual_detected else ("Binary Metadata Stream" if metadata_match else "None"),
+        "confidence": visual_confidence if visual_detected else (0.95 if metadata_match else 0.0)
     }

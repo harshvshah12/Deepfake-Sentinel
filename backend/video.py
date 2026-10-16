@@ -11,6 +11,7 @@ from typing import Dict, Any, List
 from backend.frequency import compute_fft_spectrum, calculate_spectral_analysis
 from backend.xai import generate_heatmap
 from backend.iris import IrisBiometricEngine
+from backend.fusion import ForensicDecisionEngine
 
 iris_engine = IrisBiometricEngine(device='cpu')
 
@@ -55,8 +56,8 @@ def process_video_file(
             frame_idx = item['frame_idx']
             timestamp_sec = item['timestamp_sec']
             
-            # 1. Spatial inference with TTA
-            real_prob, fake_prob, prediction, confidence = ensemble_model.predict_single(face_img, use_tta=True)
+            # 1. Dual-backbone spatial inference
+            eff_fake_prob, vit_fake_prob = ensemble_model.predict_backbones(face_img, use_tta=True)
             
             # 2. Spectral 2D Fourier Analysis
             spectral_data = calculate_spectral_analysis(face_np)
@@ -64,12 +65,19 @@ def process_video_file(
             
             # 3. Iris & Corneal Reflection Analysis
             iris_data = iris_engine.analyze_eyes(face_img, item.get('landmarks', []))
-            iris_score = float(iris_data.get('iris_anomaly_score', 0.30))
             
-            # Fused frame probability
-            fused_fake = float(np.clip(0.65 * fake_prob + 0.20 * iris_score + 0.15 * spectral_data['anomaly_score'], 0.001, 0.999))
-            fused_real = round(1.0 - fused_fake, 4)
-            fused_fake = round(fused_fake, 4)
+            # Frame-level Unified Bayesian Fusion
+            frame_fusion = ForensicDecisionEngine.fuse_evidence(
+                eff_fake_prob=eff_fake_prob,
+                vit_fake_prob=vit_fake_prob,
+                spectral_score=spectral_data['anomaly_score'],
+                iris_data=iris_data,
+                face_detected=item.get('detected', True)
+            )
+            fused_fake = frame_fusion['fake_probability']
+            fused_real = frame_fusion['real_probability']
+            frame_pred = frame_fusion['prediction']
+            frame_conf = frame_fusion['confidence']
             
             # 4. Explainable AI Heatmap
             input_tensor = ensemble_model.eff_transform(face_img).unsqueeze(0).to(device)
@@ -83,12 +91,12 @@ def process_video_file(
             frame_info = {
                 'frame_idx': frame_idx,
                 'timestamp_sec': timestamp_sec,
-                'prediction': 'Fake' if fused_fake > 0.48 else 'Real',
-                'confidence': round(max(fused_real, fused_fake), 4),
+                'prediction': frame_pred,
+                'confidence': round(frame_conf, 4),
                 'fake_probability': fused_fake,
                 'real_probability': fused_real,
                 'spectral_anomaly_score': spectral_data['anomaly_score'],
-                'iris_anomaly_score': iris_score,
+                'iris_anomaly_score': float(iris_data.get('iris_anomaly_score', 0.25)),
                 'face_detected': item.get('detected', True),
                 'face_b64': np_to_b64(face_resized),
                 'heatmap_b64': np_to_b64(heatmap),
@@ -107,13 +115,25 @@ def process_video_file(
         temporal_variance = float(np.var(fake_probs))
         mean_spectral_score = float(np.mean(spectral_scores))
 
-        # Calibrated overall prediction
-        is_fake = (mean_fake_prob > 0.48) or (max_fake_spike > 0.82 and mean_spectral_score > 0.40)
-        overall_prediction = 'Fake' if is_fake else 'Real'
-        overall_confidence = mean_fake_prob if is_fake else mean_real_prob
+        # Calibrated overall prediction using ForensicDecisionEngine boundaries
+        if mean_fake_prob >= ForensicDecisionEngine.CONFIDENT_FAKE_THRESHOLD or (max_fake_spike > 0.85 and temporal_variance > 0.04):
+            overall_prediction = 'Fake'
+            overall_confidence = mean_fake_prob
+            verdict_badge = "SYNTHETIC (AI-GENERATED VIDEO)"
+            is_inconclusive = False
+        elif mean_fake_prob <= ForensicDecisionEngine.CONFIDENT_REAL_THRESHOLD:
+            overall_prediction = 'Real'
+            overall_confidence = mean_real_prob
+            verdict_badge = "AUTHENTIC (REAL VIDEO)"
+            is_inconclusive = False
+        else:
+            overall_prediction = 'Inconclusive'
+            overall_confidence = float(max(mean_real_prob, mean_fake_prob))
+            verdict_badge = "BORDERLINE / INCONCLUSIVE VIDEO"
+            is_inconclusive = True
 
         # Select primary representative diagnostic frame
-        if is_fake:
+        if overall_prediction == 'Fake':
             primary_idx = int(np.argmax(fake_probs))
         else:
             primary_idx = int(np.argmax(real_probs))

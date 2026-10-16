@@ -12,6 +12,8 @@ ensemble = EnsembleModel(device=device)
 extractor = FaceExtractor(device=device)
 iris_engine = IrisBiometricEngine(device=device)
 
+from backend.fusion import ForensicDecisionEngine
+
 def evaluate_specimen(img_path):
     image = Image.open(img_path).convert("RGB")
     meta = extractor.extract_face_and_landmarks(image)
@@ -19,35 +21,27 @@ def evaluate_specimen(img_path):
     face_np = meta["face_np"]
     
     # 1. Primary Dual-Backbone Spatial Inference
-    raw_real, raw_fake, _, _ = ensemble.predict_single(face_img, use_tta=True)
+    eff_fake_prob, vit_fake_prob = ensemble.predict_backbones(face_img, use_tta=True)
     
     # 2. Physics & Biometric Indicators
     iris_data = iris_engine.analyze_eyes(image, meta.get("landmarks", []))
     spec_data = calculate_spectral_analysis(face_np)
     col_data = analyze_chroma_and_boundary(face_np, bbox=meta.get("bbox"))
     
-    iris_score = float(iris_data.get("iris_anomaly_score", 0.25))
-    spectral_score = float(spec_data.get("anomaly_score", 0.25))
-    color_score = float(col_data.get("color_anomaly_index", 0.20))
+    # Unified Bayesian Evidence Fusion
+    fusion_result = ForensicDecisionEngine.fuse_evidence(
+        eff_fake_prob=eff_fake_prob,
+        vit_fake_prob=vit_fake_prob,
+        spectral_score=float(spec_data.get("anomaly_score", 0.25)),
+        iris_data=iris_data,
+        color_data=col_data,
+        face_detected=meta.get("detected", True)
+    )
     
-    # Bayesian Evidence Modulation
-    # If biometric iris or spectral physics strongly indicates manipulation (>0.50), boost fake score
-    # If biometric iris and spectral physics confirm organic coherence (<0.35), boost real score
-    biometric_delta = 0.0
-    if iris_score > 0.48:
-        biometric_delta += 0.20 * (iris_score - 0.48)
-    elif iris_score < 0.32:
-        biometric_delta -= 0.15 * (0.32 - iris_score)
-        
-    if spectral_score > 0.50:
-        biometric_delta += 0.15 * (spectral_score - 0.50)
-    elif spectral_score < 0.30:
-        biometric_delta -= 0.10 * (0.30 - spectral_score)
-        
-    final_fake_prob = float(np.clip(raw_fake + biometric_delta, 0.001, 0.999))
-    final_real_prob = float(1.0 - final_fake_prob)
+    pred = fusion_result["prediction"]
+    final_real_prob = fusion_result["real_probability"]
+    final_fake_prob = fusion_result["fake_probability"]
     
-    pred = "Fake" if final_fake_prob > 0.48 else "Real"
     return pred, final_real_prob, final_fake_prob, iris_data.get("is_synthetic_iris", False)
 
 real_samples = glob.glob('dataset/real/*.jpg')[:25]
