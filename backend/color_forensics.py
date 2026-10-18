@@ -56,10 +56,30 @@ def analyze_chroma_and_boundary(image_np: np.ndarray, bbox: list = None) -> Dict
         0.0, 1.0
     ))
     
+    skin = None
+    if bbox and len(bbox) == 4:
+        x1, y1, x2, y2 = [int(v) for v in bbox]
+        face = ycbcr[max(0, y1):min(h, y2), max(0, x1):min(w, x2)]
+        if face.size > 100:
+            skin = {
+                "cb_mean": round(float(face[:, :, 1].mean()), 3),
+                "cr_mean": round(float(face[:, :, 2].mean()), 3),
+                "cb_std": round(float(face[:, :, 1].std()), 3),
+                "cr_std": round(float(face[:, :, 2].std()), 3),
+            }
+
     return {
         'channel_correlation': round(mean_channel_corr, 4),
         'chroma_anomaly_score': round(chroma_anomaly, 4),
         'chroma_variance_ratio': round(chroma_variance_ratio, 4),
         'boundary_discontinuity': round(boundary_discontinuity, 4),
-        'color_anomaly_index': round(color_anomaly_index, 4)
+        'color_anomaly_index': round(color_anomaly_index, 4),
+        'skin_chrominance': skin,
+        'validated_contribution': False,
+        'contributes_to_score': False,
+        'hypothesis': (
+            'Skin-region chrominance and face-boundary color differences are research measurements. '
+            'A still photograph cannot establish blood circulation, health, or authenticity from redness or pallor.'
+        ),
+        'limitation': 'No held-out ablation in this repository showed that these features improve detection, so they are excluded from the score.',
     }

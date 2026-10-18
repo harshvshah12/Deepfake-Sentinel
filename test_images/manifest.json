@@ -1,0 +1,246 @@
+{
+  "real": [
+    {
+      "filename": "test_real_biden.jpg",
+      "path": "test_images/real/test_real_biden.jpg",
+      "source": "Official Camera Portrait (High Res)",
+      "label": "real",
+      "dimensions": "970x2204",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_obama.jpg",
+      "path": "test_images/real/test_real_obama.jpg",
+      "source": "Official Presidential Camera Portrait",
+      "label": "real",
+      "dimensions": "910x1137",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_alex.png",
+      "path": "test_images/real/test_real_alex.png",
+      "source": "Genuine Portrait (Stage Light)",
+      "label": "real",
+      "dimensions": "424x394",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_lin.png",
+      "path": "test_images/real/test_real_lin.png",
+      "source": "Natural Lighting Human Portrait",
+      "label": "real",
+      "dimensions": "704x612",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_einstein.jpg",
+      "path": "test_images/real/test_real_einstein.jpg",
+      "source": "Historical Camera Optical Sensor",
+      "label": "real",
+      "dimensions": "3250x4333",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_curie.jpg",
+      "path": "test_images/real/test_real_curie.jpg",
+      "source": "Silver Halide Film Chemical Sensor",
+      "label": "real",
+      "dimensions": "1460x1984",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_turing.jpg",
+      "path": "test_images/real/test_real_turing.jpg",
+      "source": "Monochrome Film Portrait",
+      "label": "real",
+      "dimensions": "675x919",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_bohr.jpg",
+      "path": "test_images/real/test_real_bohr.jpg",
+      "source": "Genuine Studio Portrait",
+      "label": "real",
+      "dimensions": "1456x2048",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_lena.jpg",
+      "path": "test_images/real/test_real_lena.jpg",
+      "source": "Standard Computer Vision Test Portrait",
+      "label": "real",
+      "dimensions": "512x512",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_lincoln.jpg",
+      "path": "test_images/real/test_real_lincoln.jpg",
+      "source": "Historical Collodion Glass Plate Portrait",
+      "label": "real",
+      "dimensions": "2200x2835",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_tesla.jpg",
+      "path": "test_images/real/test_real_tesla.jpg",
+      "source": "Authentic 1890 Studio Optical Portrait",
+      "label": "real",
+      "dimensions": "940x1260",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_darwin.jpg",
+      "path": "test_images/real/test_real_darwin.jpg",
+      "source": "Authentic 1868 Albumen Print Portrait",
+      "label": "real",
+      "dimensions": "2370x3119",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_twain.jpg",
+      "path": "test_images/real/test_real_twain.jpg",
+      "source": "Authentic Bradley Studio Sensor Portrait",
+      "label": "real",
+      "dimensions": "756x1061",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_newton.jpg",
+      "path": "test_images/real/test_real_newton.jpg",
+      "source": "Sir Godfrey Kneller Fine Art Portrait",
+      "label": "real",
+      "dimensions": "2218x2671",
+      "architecture": "Authentic Physical Camera / Sensor"
+    },
+    {
+      "filename": "test_real_obama2.jpg",
+      "path": "test_images/real/test_real_obama2.jpg",
+      "source": "Official Camera Portrait (Outdoor Daylight)",
+      "label": "real",
+      "dimensions": "626x1200",
+      "architecture": "Authentic Physical Camera / Sensor"
+    }
+  ],
+  "fake": [
+    {
+      "filename": "test_fake_c01276_c01230.jpg",
+      "path": "test_images/fake/test_fake_c01276_c01230.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01280_c01245.jpg",
+      "path": "test_images/fake/test_fake_c01280_c01245.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01282_c01268.jpg",
+      "path": "test_images/fake/test_fake_c01282_c01268.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01283_c01242.jpg",
+      "path": "test_images/fake/test_fake_c01283_c01242.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01284_c01252.jpg",
+      "path": "test_images/fake/test_fake_c01284_c01252.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01285_c01249.jpg",
+      "path": "test_images/fake/test_fake_c01285_c01249.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01287_c01260.jpg",
+      "path": "test_images/fake/test_fake_c01287_c01260.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01291_c01313.jpg",
+      "path": "test_images/fake/test_fake_c01291_c01313.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01292_c01349.jpg",
+      "path": "test_images/fake/test_fake_c01292_c01349.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01294_c01387.jpg",
+      "path": "test_images/fake/test_fake_c01294_c01387.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01295_c01321.jpg",
+      "path": "test_images/fake/test_fake_c01295_c01321.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01296_c01201.jpg",
+      "path": "test_images/fake/test_fake_c01296_c01201.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01297_c01228.jpg",
+      "path": "test_images/fake/test_fake_c01297_c01228.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01299_c01283.jpg",
+      "path": "test_images/fake/test_fake_c01299_c01283.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    },
+    {
+      "filename": "test_fake_c01300_c01236.jpg",
+      "path": "test_images/fake/test_fake_c01300_c01236.jpg",
+      "source": "HiDF Benchmark (Human-Indistinguishable Deepfake)",
+      "label": "fake",
+      "dimensions": "1024x1024",
+      "architecture": "Neural Face-Swap / Synthesis"
+    }
+  ]
+}

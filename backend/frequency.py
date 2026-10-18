@@ -79,7 +79,14 @@ def calculate_spectral_analysis(image_np: np.ndarray) -> Dict[str, Any]:
         'anomaly_score': round(anomaly_score, 4),
         'high_freq_ratio': round(raw_high_freq_ratio, 4),
         'radial_profile': normalized_profile,
-        'has_checkerboard_artifact': anomaly_score > 0.65
+        'elevated_high_frequency': anomaly_score > 0.65,
+        'validated_contribution': False,
+        'contributes_to_score': False,
+        'limitation': (
+            'The scaled high-frequency ratio is an uncalibrated measurement. '
+            'JPEG compression, sharpening, and sensor noise can raise it. '
+            'It is not conclusive proof of a GAN checkerboard.'
+        ),
     }
 
 def calculate_spectral_energy(image_np: np.ndarray) -> float:

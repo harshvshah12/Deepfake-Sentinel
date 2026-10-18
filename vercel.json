@@ -1,3 +1,9 @@
 {
-  "cleanUrls": true
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/samples", "destination": "/samples.json" },
+    { "source": "/demo-report", "destination": "/test_report.html" },
+    { "source": "/demo-report/pdf", "destination": "/sentinel_sample_forensic_report.pdf" },
+    { "source": "/report/(.*)", "destination": "/test_report.html" }
+  ]
 }

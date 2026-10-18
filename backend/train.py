@@ -141,8 +141,8 @@ def train_and_calibrate(epochs=2, batch_size=8, lr=5e-5, device='cpu'):
                 'state_dict': model.state_dict(),
                 'threshold': 0.45,
                 'val_accuracy': val_acc
-            }, weights_path)
-            print(f'[Trainer] Saved improved checkpoint to {weights_path} with {val_acc*100:.2f}% accuracy.')
+            }, weights_dir / 'local_finetune_NOT_PRODUCTION.pth')
+            print('[Trainer] Saved a separate local checkpoint. The production 399k file was not overwritten.')
 
     print(f'[Trainer] Optimization complete! Best Accuracy: {best_acc*100:.2f}%')
 

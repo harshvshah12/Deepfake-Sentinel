@@ -1,0 +1,25 @@
+{
+  "status": "SMOKE_SAMPLE",
+  "limitation": "Folder names were used as labels. The local files have no identity or source-video manifest, so this is not a held-out, leakage-safe, or cross-dataset benchmark. Inconclusive predictions are counted as not-fake for this confusion matrix only.",
+  "images_per_class_requested": 8,
+  "images_scored": 16,
+  "precision_fake": 0.7272727272727273,
+  "recall_fake": 1.0,
+  "f1_fake": 0.8421052631578947,
+  "roc_auc": 0.984375,
+  "confusion_matrix_labels": [
+    "real",
+    "fake"
+  ],
+  "confusion_matrix": [
+    [
+      5,
+      3
+    ],
+    [
+      0,
+      8
+    ]
+  ],
+  "decision": "unweighted mean of neural fake-scores; auxiliary features excluded"
+}

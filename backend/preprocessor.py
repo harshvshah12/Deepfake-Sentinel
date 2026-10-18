@@ -85,18 +85,34 @@ class FaceExtractor:
         except Exception:
             pass
 
-        # Center crop fallback
+        return self._center_crop(image)
+
+    def align_by_eyes(self, image: Image.Image, landmarks: list) -> Dict[str, Any]:
+        """Rotate so the eye line is horizontal when both eyes were detected."""
+        if not landmarks or len(landmarks) < 2:
+            return {"image": image, "applied": False, "angle_deg": None, "status": "NOT_APPLIED", "reason": "Fewer than two eye landmarks."}
+        lx, ly = float(landmarks[0][0]), float(landmarks[0][1])
+        rx, ry = float(landmarks[1][0]), float(landmarks[1][1])
+        angle = float(np.degrees(np.arctan2(ry - ly, rx - lx)))
+        if abs(angle) < 2.0:
+            return {"image": image, "applied": False, "angle_deg": round(angle, 3), "status": "ALREADY_LEVEL", "reason": "Eye line is within 2 degrees of horizontal."}
+        aligned = image.rotate(-angle, resample=Image.Resampling.BICUBIC, expand=False, fillcolor=(0, 0, 0))
+        return {"image": aligned, "applied": True, "angle_deg": round(angle, 3), "status": "ROTATED", "reason": "Rotated so the detected eye line is horizontal."}
+
+    def _center_crop(self, image: Image.Image) -> Dict[str, Any]:
+        w, h = image.size
         min_dim = min(w, h)
         left = (w - min_dim) // 2
         top = (h - min_dim) // 2
         cropped_img = image.crop((left, top, left + min_dim, top + min_dim)).resize((256, 256), Image.Resampling.BILINEAR)
         return {
             'detected': False,
-            'confidence': 0.50,
+            'confidence': 0.0,
             'bbox': [left, top, left + min_dim, top + min_dim],
             'landmarks': [],
             'face_img': cropped_img,
-            'face_np': np.array(cropped_img)
+            'face_np': np.array(cropped_img),
+            'crop_method': 'center_square',
         }
 
     def extract_video_frames(self, video_path: str, max_frames: int = 16) -> List[Dict[str, Any]]:

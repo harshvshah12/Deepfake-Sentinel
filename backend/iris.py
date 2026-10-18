@@ -68,18 +68,23 @@ class IrisBiometricEngine:
         if not landmarks or len(landmarks) < 2:
             return {
                 'detected': False,
-                'pupil_circularity_left': 0.85,
-                'pupil_circularity_right': 0.85,
-                'mean_circularity': 0.85,
-                'specular_area_left': 10,
-                'specular_area_right': 10,
-                'specular_asymmetry': 0.1,
-                'sclera_chroma_mismatch': 0.1,
-                'siamese_coherence': 0.90,
-                'iris_anomaly_score': 0.15,
-                'is_synthetic_iris': False,
+                'status': 'NOT_MEASURED',
+                'reason': 'Facial landmarks were not available, so eye measurements were not invented.',
+                'pupil_circularity_left': None,
+                'pupil_circularity_right': None,
+                'mean_circularity': None,
+                'specular_area_left': None,
+                'specular_area_right': None,
+                'specular_asymmetry': None,
+                'sclera_chroma_mismatch': None,
+                'siamese_coherence': None,
+                'siamese_status': 'UNTRAINED_RANDOM_WEIGHTS',
+                'iris_anomaly_score': None,
+                'is_synthetic_iris': None,
+                'validated_contribution': False,
                 'left_eye_b64': '',
-                'right_eye_b64': ''
+                'right_eye_b64': '',
+                'limitation': 'Iris geometry is an unvalidated measurement and does not change the neural score.',
             }
 
         left_eye_pt = landmarks[0]
@@ -208,7 +213,15 @@ class IrisBiometricEngine:
             'sclera_chroma_mismatch': round(float(chroma_diff), 3),
             'siamese_coherence': round(siamese_sim, 3),
             'iris_anomaly_score': round(iris_anomaly, 3),
-            'is_synthetic_iris': iris_anomaly > 0.52,
+            'is_synthetic_iris': None,
+            'status': 'MEASURED_UNVALIDATED',
+            'siamese_status': 'UNTRAINED_RANDOM_WEIGHTS',
+            'validated_contribution': False,
+            'limitation': (
+                'Pupil and specular numbers are geometric measurements. '
+                'The Siamese network has random weights. Neither result changes the neural score, '
+                'and neither is evidence of blood flow or a medical condition.'
+            ),
             'left_eye_b64': roi_to_b64(left_roi),
             'right_eye_b64': roi_to_b64(right_roi)
         }

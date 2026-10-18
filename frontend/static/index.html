@@ -8,11 +8,111 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/client_forensics.js"></script>
     <style>
         body { margin: 0; background-color: #070A11; color: #F3F4F6; font-family: system-ui, -apple-system, sans-serif; overflow-x: hidden; }
         #canvas-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
         .glass-panel { background: rgba(14, 20, 36, 0.80); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 16px; }
-        .scan-laser { position: absolute; width: 100%; height: 2px; background: linear-gradient(90deg, transparent, #00FFC8, transparent); box-shadow: 0 0 16px #00FFC8; animation: scanLaser 2.2s infinite ease-in-out; }
+        .scan-laser { position: absolute; width: 100%; height: 2px; background: linear-gradient(90deg, transparent, #5eead4, transparent); box-shadow: 0 0 12px rgba(94, 234, 212, 0.45); animation: scanLaser 2.2s infinite ease-in-out; }
+        :root {
+            --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+            --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .scan-laser, .animate-ping, .animate-pulse, .animate-spin, .cinema-frame, .cinema-laser { animation: none !important; }
+            .cinema-frame { opacity: 1; transform: none; }
+        }
+        .cinema-shell { position: relative; overflow: hidden; }
+        .cinema-kicker { letter-spacing: 0.28em; font-size: 10px; color: #67e8f9; font-family: ui-monospace, monospace; text-transform: uppercase; }
+        .cinema-stage { min-height: 320px; transition: all 300ms ease; }
+        .cinema-frame {
+            position: relative; background: #05070c; border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; overflow: hidden;
+            opacity: 0; transform: translateY(10px) scale(0.96);
+            animation: cinemaIn 480ms var(--ease-out) forwards;
+        }
+        .cinema-frame img { width: 100%; height: 280px; object-fit: contain; background: #000; display: block; }
+        .cinema-frame span { position: absolute; left: 10px; bottom: 10px; font-size: 10px; font-family: ui-monospace, monospace; color: #e5e7eb; background: rgba(0,0,0,0.62); padding: 3px 8px; border-radius: 999px; }
+        .cinema-laser { position: absolute; inset: 0 auto 0 0; width: 28%; background: linear-gradient(90deg, transparent, rgba(94,234,212,0.18), transparent); animation: cinemaSweep 1.6s linear infinite; pointer-events: none; }
+        .cinema-meter { height: 8px; background: rgba(255,255,255,0.06); border-radius: 999px; overflow: hidden; }
+        .cinema-meter > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #22d3ee, #a855f7); transition: width 700ms var(--ease-out); }
+        .cinema-dots { display: flex; gap: 6px; flex-wrap: wrap; }
+        .cinema-dots button { width: 8px; height: 8px; padding: 0; border-radius: 999px; border: 0; background: #334155; cursor: pointer; }
+        .cinema-dots button.on { background: #22d3ee; transform: scale(1.35); }
+        .cinema-dots button.done { background: #155e75; }
+
+        /* Stepper & Interactive Cinema Elements */
+        .stepper-btn {
+            display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px;
+            background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);
+            font-family: ui-monospace, monospace; font-size: 11px; color: #94a3b8; transition: all 200ms ease;
+            white-space: nowrap; cursor: pointer; user-select: none;
+        }
+        .stepper-btn:hover { background: rgba(255, 255, 255, 0.08); color: #fff; border-color: rgba(34, 211, 238, 0.3); }
+        .stepper-btn.active {
+            background: rgba(34, 211, 238, 0.15); border-color: #22d3ee; color: #22d3ee; font-weight: 700;
+            box-shadow: 0 0 14px rgba(34, 211, 238, 0.35); transform: translateY(-1px);
+        }
+        .stepper-btn.done { border-color: rgba(45, 212, 191, 0.3); color: #5eead4; }
+
+        /* Alignment Hero Stage */
+        .align-card {
+            position: relative; background: #050811; border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .align-laser-horizon {
+            position: absolute; left: 0; right: 0; top: 48%; height: 2px;
+            background: linear-gradient(90deg, transparent, #22d3ee, #22d3ee, transparent);
+            box-shadow: 0 0 12px #22d3ee; pointer-events: none; z-index: 10;
+        }
+        .align-tilt-horizon {
+            position: absolute; left: 5%; right: 5%; top: 48%; height: 2px;
+            background: linear-gradient(90deg, transparent, #fb7185, #fb7185, transparent);
+            box-shadow: 0 0 10px #fb7185; pointer-events: none; z-index: 10;
+            transform-origin: center center;
+        }
+        .split-slider-box {
+            position: relative; overflow: hidden; user-select: none; border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.15); background: #000; height: 320px;
+        }
+        .split-slider-divider {
+            position: absolute; top: 0; bottom: 0; width: 2px; background: #22d3ee;
+            box-shadow: 0 0 14px #22d3ee; z-index: 25; pointer-events: none;
+        }
+        .split-slider-knob {
+            position: absolute; top: 50%; transform: translate(-50%, -50%);
+            width: 32px; height: 32px; border-radius: 999px; background: #0b1329;
+            border: 2px solid #22d3ee; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 0 16px rgba(34, 211, 238, 0.7); cursor: ew-resize; z-index: 30;
+        }
+
+        /* ViT 14x14 Patches Grid */
+        .vit-matrix-grid {
+            display: grid; grid-template-columns: repeat(14, 1fr); grid-template-rows: repeat(14, 1fr);
+            position: absolute; inset: 0; pointer-events: none;
+        }
+        .vit-cell { border: 1px solid rgba(34, 211, 238, 0.12); transition: all 250ms ease; }
+        .vit-cell.highlight {
+            background: rgba(34, 211, 238, 0.35); border-color: #22d3ee;
+            box-shadow: inset 0 0 10px rgba(34, 211, 238, 0.6);
+        }
+
+        /* 2D FFT Concentric Rings */
+        @keyframes fftRingExpand {
+            0% { transform: scale(0.08); opacity: 0.9; }
+            100% { transform: scale(1.4); opacity: 0; }
+        }
+        .fft-pulse-ring {
+            position: absolute; border-radius: 999px; border: 1px solid rgba(34, 211, 238, 0.5);
+            pointer-events: none; animation: fftRingExpand 2.6s infinite cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        @keyframes cinemaIn { to { opacity: 1; transform: none; } }
+        @keyframes cinemaSweep { from { transform: translateX(-40%); } to { transform: translateX(420%); } }
+        .stage-row { display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; align-items: start; font-size: 11px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .stage-dot { width: 8px; height: 8px; border-radius: 999px; margin-top: 4px; background: #64748b; }
+        .stage-dot.completed { background: #2dd4bf; }
+        .stage-dot.failed { background: #f43f5e; }
         @keyframes scanLaser { 0% { top: 0%; opacity: 0.2; } 50% { top: 100%; opacity: 1; } 100% { top: 0%; opacity: 0.2; } }
         .glow-text-cyan { text-shadow: 0 0 12px rgba(0, 240, 255, 0.6); }
         .glow-text-emerald { text-shadow: 0 0 12px rgba(0, 255, 200, 0.6); }
@@ -52,6 +152,11 @@
             </button>
         </div>
         <div class="flex items-center gap-3">
+            <a href="/demo-report" target="_blank" id="demo-report-nav-btn" class="px-3 py-1.5 rounded-lg text-xs font-mono font-medium bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25 transition-all flex items-center gap-1.5 shadow-[0_0_10px_rgba(99,102,241,0.2)] hover:scale-[1.02]">
+                <i data-lucide="file-text" class="w-3.5 h-3.5 text-indigo-400"></i>
+                <span>4-Page Report Dossier</span>
+                <span class="px-1 py-0.2 rounded text-[8px] bg-indigo-500/20 text-indigo-200 font-bold">7 GRAPHS</span>
+            </a>
             <button onclick="openMetricsModal()" id="show-visualizations-btn" class="px-3 py-1.5 rounded-lg text-xs font-mono font-medium bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/20 transition-all flex items-center gap-1.5 shadow-[0_0_10px_rgba(0,240,255,0.15)]">
                 <i data-lucide="bar-chart-3" class="w-3.5 h-3.5 text-cyan-400"></i>
                 <span>Model Visualizations</span>
@@ -143,6 +248,93 @@
                 </div>
 
                 <div class="lg:col-span-7 space-y-4">
+                    <div id="forensic-timeline" class="glass-panel p-4 hidden space-y-2">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-xs font-semibold tracking-wide text-gray-200">Forensic timeline</h3>
+                            <button id="cancel-scan-btn" type="button" class="text-[11px] text-amber-300 border border-amber-400/40 rounded px-2 py-1">Cancel</button>
+                        </div>
+                        <div id="forensic-timeline-list" class="max-h-64 overflow-y-auto"></div>
+                    </div>
+                    <div id="scan-cinema" class="cinema-shell glass-panel p-5 hidden space-y-4 border border-cyan-400/30 bg-[#050811]/90 shadow-[0_0_35px_rgba(0,240,255,0.08)]">
+                        <!-- Top Header & Scrubber Navigation Bar -->
+                        <div class="space-y-3 border-b border-white/10 pb-4">
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-2">
+                                    <span class="flex h-2.5 w-2.5 relative">
+                                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                                        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400"></span>
+                                    </span>
+                                    <div id="cinema-kicker" class="cinema-kicker">00  Waiting for pipeline</div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div id="cinema-progress" class="text-xs font-mono text-cyan-300 bg-cyan-500/10 px-2.5 py-0.5 rounded border border-cyan-500/30">Step 0 / 0</div>
+                                    <button id="cinema-skip" type="button" class="text-[11px] font-mono text-cyan-200 border border-cyan-400/30 hover:border-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20 rounded-lg px-2.5 py-1 transition-all flex items-center gap-1">
+                                        <i data-lucide="fast-forward" class="w-3.5 h-3.5"></i> Skip Replay
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <h3 id="cinema-title" class="text-xl font-black tracking-tight text-white flex items-center gap-2">
+                                    The image has not been scored yet
+                                </h3>
+                                <p id="cinema-body" class="text-xs text-gray-300 mt-1 leading-relaxed">
+                                    Face lock, alignment, both networks, FFT, and Grad-CAM will appear here in the order they actually ran. No invented overlays.
+                                </p>
+                            </div>
+
+                            <!-- Interactive Stepper Chain -->
+                            <div class="overflow-x-auto pb-1.5 scrollbar-thin">
+                                <div id="cinema-stepper-list" class="flex items-center gap-2 min-w-max">
+                                    <!-- Populated dynamically with step buttons -->
+                                </div>
+                            </div>
+
+                            <!-- Interactive Playback Deck -->
+                            <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/5">
+                                <div class="flex items-center gap-1.5">
+                                    <button onclick="cinemaPrevStep()" type="button" title="Previous Step" class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition-all">
+                                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="toggleCinemaPlay()" type="button" title="Play / Pause" class="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-mono flex items-center gap-1.5 transition-all">
+                                        <i id="cinema-play-icon" data-lucide="pause" class="w-3.5 h-3.5"></i>
+                                        <span id="cinema-play-text">Pause</span>
+                                    </button>
+                                    <button onclick="cinemaNextStep()" type="button" title="Next Step" class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition-all">
+                                        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                                    </button>
+                                    <button onclick="cinemaReplay()" type="button" title="Replay Entire Walkthrough" class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 hover:text-white transition-all">
+                                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+
+                                <!-- Auto-Advance Step Progress Bar -->
+                                <div class="flex-1 max-w-xs mx-2">
+                                    <div class="h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/10">
+                                        <div id="cinema-step-timer" class="h-full bg-gradient-to-r from-cyan-400 to-indigo-400 transition-all duration-100" style="width: 0%;"></div>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center gap-2 text-xs font-mono">
+                                    <span class="text-gray-400 text-[10px]">SPEED:</span>
+                                    <button onclick="setCinemaSpeed(0.75)" id="speed-075" class="px-2 py-0.5 rounded text-[10px] bg-white/5 text-gray-400 hover:text-white transition-all">0.75x</button>
+                                    <button onclick="setCinemaSpeed(1.0)" id="speed-100" class="px-2 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold transition-all">1x</button>
+                                    <button onclick="setCinemaSpeed(1.5)" id="speed-150" class="px-2 py-0.5 rounded text-[10px] bg-white/5 text-gray-400 hover:text-white transition-all">1.5x</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- The Animated Visual Stage -->
+                        <div id="cinema-stage" class="cinema-stage"></div>
+
+                        <!-- Interactive Controls & Overlays -->
+                        <div id="cinema-interactive-controls" class="space-y-2"></div>
+
+                        <!-- Metric Meters -->
+                        <div id="cinema-meters" class="space-y-2"></div>
+                        <p id="cinema-footnote" class="text-[11px] font-mono text-gray-400 border-t border-white/5 pt-2"></p>
+                        <div id="cinema-dots" class="cinema-dots hidden"></div>
+                    </div>
                     <div id="image-result-placeholder" class="glass-panel p-12 text-center text-gray-500 space-y-3">
                         <i data-lucide="scan" class="w-12 h-12 mx-auto text-gray-600 animate-pulse"></i>
                         <p class="text-xs">Awaiting specimen ingestion. Ingest an image or pick a test specimen to begin forensic breakdown.</p>
@@ -160,12 +352,25 @@
                                 </div>
                                 <h3 id="verdict-title" class="text-2xl font-black tracking-tight text-white">99.4% REAL</h3>
                             </div>
-                            <div class="text-right space-y-1">
-                                <div class="text-[11px] text-gray-400 font-mono">Calibrated Breakdown:</div>
-                                <div class="text-xs font-mono">
-                                    <span class="text-emerald-400 font-bold" id="prob-real">Real: 99.4%</span>
-                                    <span class="text-gray-500 mx-1.5">|</span>
-                                    <span class="text-rose-400 font-bold" id="prob-fake">Fake: 0.6%</span>
+                            <div class="flex flex-wrap items-center gap-3">
+                                <div class="text-right space-y-1">
+                                    <div class="text-[11px] text-gray-400 font-mono">Calibrated Breakdown:</div>
+                                    <div class="text-xs font-mono">
+                                        <span class="text-emerald-400 font-bold" id="prob-real">Real: 99.4%</span>
+                                        <span class="text-gray-500 mx-1.5">|</span>
+                                        <span class="text-rose-400 font-bold" id="prob-fake">Fake: 0.6%</span>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <button onclick="downloadForensicReportPdf()" id="btn-download-pdf" class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-400 via-cyan-300 to-indigo-400 hover:from-cyan-300 hover:to-indigo-300 text-black font-black text-xs font-mono tracking-wider uppercase transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(0,240,255,0.35)] hover:scale-[1.02] active:scale-[0.98]">
+                                        <i data-lucide="file-down" class="w-4 h-4 text-black"></i>
+                                        <span>Download Forensic Audit PDF Report</span>
+                                        <span class="px-1.5 py-0.5 rounded text-[9px] bg-black/40 text-cyan-200 font-bold">4-PAGE</span>
+                                    </button>
+                                    <button onclick="openForensicReportTab()" class="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-cyan-400/40 text-cyan-300 font-bold text-xs font-mono tracking-wider uppercase transition-all flex items-center gap-1.5 hover:scale-[1.02] active:scale-[0.98]">
+                                        <i data-lucide="external-link" class="w-3.5 h-3.5 text-cyan-300"></i>
+                                        <span>View Dossier</span>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -715,6 +920,7 @@
 
             <div class="flex items-center justify-end gap-3 pt-2">
                 <button onclick="closeAuditModal()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/15 text-gray-300">Close</button>
+                <button onclick="downloadAuditPDF()" class="px-4 py-2 rounded-xl text-xs font-bold bg-white/10 text-white">Download PDF</button>
                 <button onclick="downloadAuditJSON()" class="px-4 py-2 rounded-xl text-xs font-bold bg-cyan-400 text-black flex items-center gap-1.5 shadow-[0_0_15px_rgba(0,240,255,0.3)]">
                     <i data-lucide="download" class="w-3.5 h-3.5"></i> Download JSON Certificate
                 </button>
@@ -1049,11 +1255,11 @@
             } else if (state === 'real') {
                 targetSpeed = 0.005;
                 coreMesh.material.color.setHex(0x00FFC8);
-                wireMesh.material.color.setHex(0x00FFC8);
+                if (wireMesh) wireMesh.material.color.setHex(0x00FFC8);
             } else if (state === 'fake') {
                 targetSpeed = 0.008;
                 coreMesh.material.color.setHex(0xFF2E63);
-                wireMesh.material.color.setHex(0xFF2E63);
+                if (wireMesh) wireMesh.material.color.setHex(0xFF2E63);
             } else {
                 targetSpeed = 0.003;
                 coreMesh.material.color.setHex(0x00F0FF);
@@ -1086,6 +1292,36 @@
         let currentSelectedFile = null;
         let currentVideoFile = null;
         let lastAnalysisResult = null;
+        window.lastAnalysisResult = null;
+        let activeScanId = null;
+        let scanAbort = null;
+
+        function renderStageRow(list, event) {
+            const row = document.createElement('div');
+            row.className = 'stage-row';
+            const dot = document.createElement('span');
+            dot.className = 'stage-dot ' + (event.status || '');
+            const name = document.createElement('div');
+            name.innerHTML = `<div class="text-gray-200">${event.stage_id || ''}</div>`;
+            const detail = document.createElement('div');
+            detail.className = 'text-[10px] text-gray-500 font-mono';
+            const result = event.result || {};
+            const bits = [];
+            if (result.prediction) bits.push(result.prediction);
+            if (result.fake_probability !== undefined && result.fake_probability !== null) bits.push('fake ' + result.fake_probability);
+            if (result.sha256) bits.push(result.sha256.slice(0, 12));
+            if (result.detected !== undefined) bits.push('detected ' + result.detected);
+            if (result.latency_ms) bits.push(result.latency_ms + ' ms');
+            if (event.error) bits.push(event.error);
+            detail.textContent = bits.join(' · ');
+            const stamp = document.createElement('div');
+            stamp.className = 'text-[10px] text-gray-500 font-mono';
+            stamp.textContent = event.status || '';
+            row.append(dot, name, stamp);
+            name.appendChild(detail);
+            list.appendChild(row);
+            list.scrollTop = list.scrollHeight;
+        }
         let webcamStreamObj = null;
         let autoScanInterval = null;
 
@@ -1352,6 +1588,972 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
             document.getElementById('export-cert-btn').classList.remove('hidden');
         }
 
+        function showScoreSoFar(result) {
+            if (!result || !result.prediction) return;
+            renderImageResults({
+                prediction: result.prediction,
+                fake_probability: result.fake_probability,
+                real_probability: result.real_probability,
+                decision_notes: 'Model scores are in. Heatmap and the written report finish after this.'
+            });
+        }
+
+        let cinemaToken = 0;
+        let cinemaSkip = false;
+        const cinemaState = {
+            data: null,
+            story: [],
+            currentIndex: 0,
+            isPlaying: true,
+            speed: 1.0,
+            timerProgress: 0,
+            timerInterval: null,
+            alignMode: 'dual',
+            splitPct: 50,
+            camOpacity: 0.65,
+            camMode: 'overlay',
+            vitActiveToken: 0,
+            vitInterval: null
+        };
+
+        function prefersReducedMotion() {
+            return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        }
+
+        function setCinemaSpeed(speed) {
+            cinemaState.speed = speed;
+            ['075', '100', '150'].forEach(id => {
+                const btn = document.getElementById(`speed-${id}`);
+                if (btn) {
+                    const match = (id === '075' && speed === 0.75) || (id === '100' && speed === 1.0) || (id === '150' && speed === 1.5);
+                    btn.className = match
+                        ? "px-2 py-0.5 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold transition-all"
+                        : "px-2 py-0.5 rounded text-[10px] bg-white/5 text-gray-400 hover:text-white transition-all";
+                }
+            });
+        }
+
+        function toggleCinemaPlay() {
+            cinemaState.isPlaying = !cinemaState.isPlaying;
+            const icon = document.getElementById('cinema-play-icon');
+            const text = document.getElementById('cinema-play-text');
+            if (cinemaState.isPlaying) {
+                if (icon) icon.setAttribute('data-lucide', 'pause');
+                if (text) text.textContent = 'Pause';
+                startStepTimer();
+            } else {
+                if (icon) icon.setAttribute('data-lucide', 'play');
+                if (text) text.textContent = 'Play';
+                clearInterval(cinemaState.timerInterval);
+            }
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function cinemaNextStep() {
+            if (!cinemaState.story || cinemaState.story.length === 0) return;
+            const nextIdx = Math.min(cinemaState.story.length - 1, cinemaState.currentIndex + 1);
+            cinemaJumpTo(nextIdx);
+        }
+
+        function cinemaPrevStep() {
+            if (!cinemaState.story || cinemaState.story.length === 0) return;
+            const prevIdx = Math.max(0, cinemaState.currentIndex - 1);
+            cinemaJumpTo(prevIdx);
+        }
+
+        function cinemaReplay() {
+            cinemaState.isPlaying = true;
+            const icon = document.getElementById('cinema-play-icon');
+            const text = document.getElementById('cinema-play-text');
+            if (icon) icon.setAttribute('data-lucide', 'pause');
+            if (text) text.textContent = 'Pause';
+            if (window.lucide) lucide.createIcons();
+            cinemaJumpTo(0);
+        }
+
+        function cinemaJumpTo(index) {
+            clearInterval(cinemaState.timerInterval);
+            if (cinemaState.vitInterval) clearInterval(cinemaState.vitInterval);
+            cinemaState.currentIndex = index;
+            cinemaState.timerProgress = 0;
+            const bar = document.getElementById('cinema-step-timer');
+            if (bar) bar.style.width = '0%';
+            if (cinemaState.story[index]) {
+                paintCinemaChapter(cinemaState.story[index], index, cinemaState.story.length);
+            }
+            if (cinemaState.isPlaying) {
+                startStepTimer();
+            }
+        }
+
+        function startStepTimer() {
+            clearInterval(cinemaState.timerInterval);
+            const currentChapter = cinemaState.story[cinemaState.currentIndex];
+            if (!currentChapter) return;
+            // Alignment, ViT, FFT, and Decision hold longer to allow full visual inspection
+            const baseDuration = (currentChapter.id === 'align' || currentChapter.id === 'vit_patches' || currentChapter.id === 'fft' || currentChapter.id === 'cam' || currentChapter.id === 'decision') ? 4200 : 3000;
+            const stepDuration = baseDuration / cinemaState.speed;
+            const tick = 50;
+            cinemaState.timerInterval = setInterval(() => {
+                if (!cinemaState.isPlaying) {
+                    clearInterval(cinemaState.timerInterval);
+                    return;
+                }
+                cinemaState.timerProgress += (tick / stepDuration) * 100;
+                const bar = document.getElementById('cinema-step-timer');
+                if (bar) bar.style.width = `${Math.min(100, cinemaState.timerProgress)}%`;
+
+                if (cinemaState.timerProgress >= 100) {
+                    clearInterval(cinemaState.timerInterval);
+                    cinemaState.timerProgress = 0;
+                    if (bar) bar.style.width = '0%';
+                    if (cinemaState.currentIndex < cinemaState.story.length - 1) {
+                        cinemaState.currentIndex += 1;
+                        paintCinemaChapter(cinemaState.story[cinemaState.currentIndex], cinemaState.currentIndex, cinemaState.story.length);
+                        startStepTimer();
+                    } else {
+                        // Reached end of walkthrough: unlock final card
+                        if (cinemaState.data) {
+                            renderImageResults(cinemaState.data);
+                            const card = document.getElementById('image-result-card');
+                            if (card) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                        }
+                    }
+                }
+            }, tick);
+        }
+
+        function setAlignMode(mode) {
+            cinemaState.alignMode = mode;
+            const chapter = cinemaState.story[cinemaState.currentIndex];
+            if (chapter && chapter.id === 'align') {
+                renderAlignStage(chapter, cinemaState.data);
+            }
+        }
+
+        function setGradCamOpacity(val) {
+            cinemaState.camOpacity = parseFloat(val);
+            const heatImg = document.getElementById('gradcam-heatmap-layer');
+            const valLabel = document.getElementById('cam-opacity-val');
+            if (heatImg) heatImg.style.opacity = cinemaState.camOpacity;
+            if (valLabel) valLabel.textContent = `${Math.round(cinemaState.camOpacity * 100)}%`;
+        }
+
+        function setGradCamMode(mode) {
+            cinemaState.camMode = mode;
+            const heatImg = document.getElementById('gradcam-heatmap-layer');
+            const faceImg = document.getElementById('gradcam-face-layer');
+            if (!heatImg || !faceImg) return;
+            if (mode === 'overlay') {
+                faceImg.style.opacity = '1';
+                heatImg.style.opacity = cinemaState.camOpacity;
+            } else if (mode === 'thermal') {
+                faceImg.style.opacity = '0';
+                heatImg.style.opacity = '1';
+            } else if (mode === 'clean') {
+                faceImg.style.opacity = '1';
+                heatImg.style.opacity = '0';
+            }
+            ['overlay', 'thermal', 'clean'].forEach(m => {
+                const btn = document.getElementById(`btn-cam-${m}`);
+                if (btn) {
+                    btn.className = m === mode
+                        ? "px-2 py-1 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold"
+                        : "px-2 py-1 rounded text-[10px] font-mono bg-white/5 text-gray-400 hover:text-white";
+                }
+            });
+        }
+
+        function updateSplitSlider(e, container) {
+            const rect = container.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+            const pct = (x / rect.width) * 100;
+            cinemaState.splitPct = pct;
+            const divider = document.getElementById('split-divider');
+            const knob = document.getElementById('split-knob');
+            const topLayer = document.getElementById('split-top-layer');
+            if (divider) divider.style.left = `${pct}%`;
+            if (knob) knob.style.left = `${pct}%`;
+            if (topLayer) topLayer.style.clipPath = `polygon(0 0, ${pct}% 0, ${pct}% 100%, 0 100%)`;
+        }
+
+        function openCinemaWaiting(previewSrc) {
+            const cinema = document.getElementById('scan-cinema');
+            const placeholder = document.getElementById('image-result-placeholder');
+            cinema.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+            document.getElementById('image-result-card').classList.add('hidden');
+            cinemaSkip = false;
+            cinemaState.isPlaying = false;
+            clearInterval(cinemaState.timerInterval);
+
+            document.getElementById('cinema-kicker').textContent = '00  INGESTION & STAGING';
+            document.getElementById('cinema-title').textContent = 'Live Specimen Staged for Deep Learning';
+            document.getElementById('cinema-body').textContent = 'The raw image file has been ingested into the sandboxed pipeline. MTCNN is actively computing facial bounding boxes, 5-point ocular geometry, and rotational affine alignment.';
+            document.getElementById('cinema-footnote').textContent = 'Pipeline Active • MTCNN, EfficientNet-B3, ViT-B/16 & 2D FFT Engines Initialized';
+            document.getElementById('cinema-meters').innerHTML = '';
+            document.getElementById('cinema-progress').textContent = 'Processing';
+            document.getElementById('cinema-stepper-list').innerHTML = `
+                <div class="stepper-btn active">
+                    <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                    <span>00 INGESTION</span>
+                </div>
+            `;
+            const stage = document.getElementById('cinema-stage');
+            stage.innerHTML = `
+                <div class="relative max-w-md mx-auto rounded-xl overflow-hidden border border-cyan-400/30 bg-black/60 shadow-[0_0_30px_rgba(0,240,255,0.15)]">
+                    <img src="${previewSrc || ''}" alt="Uploaded Specimen" class="w-full h-[300px] object-contain block bg-[#04060c]">
+                    <div class="scan-laser"></div>
+                    <div class="absolute inset-0 border border-cyan-400/40 pointer-events-none"></div>
+                    <div class="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/80 border border-cyan-500/40 text-[10px] font-mono text-cyan-300 flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                        LIVE IMAGE INGESTION
+                    </div>
+                    <div class="absolute bottom-3 left-3 right-3 p-2 rounded-lg bg-black/85 border border-white/10 text-xs font-mono text-gray-300 flex items-center justify-between">
+                        <span class="text-gray-400">Status:</span>
+                        <span class="text-cyan-300 font-bold flex items-center gap-1"><i data-lucide="loader" class="w-3 h-3 animate-spin"></i> Aligning & Inferencing...</span>
+                    </div>
+                </div>
+            `;
+            cinema.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            if (window.lucide) lucide.createIcons();
+        }
+
+        // ==========================================
+        // STAGE-SPECIFIC VISUAL RENDERERS
+        // ==========================================
+
+        function renderAlignStage(chapter, data) {
+            const stage = document.getElementById('cinema-stage');
+            const meta = chapter.meta || {};
+            const cropB64 = meta.crop_b64 || (data && data.crop_b64) || (chapter.frames[0] && chapter.frames[0].b64);
+            const alignedB64 = meta.aligned_b64 || (data && (data.aligned_b64 || data.face_b64)) || (chapter.frames[1] && chapter.frames[1].b64) || cropB64;
+            const angle = meta.angle_deg !== undefined ? meta.angle_deg : (data && data.alignment && data.alignment.angle_deg !== undefined ? data.alignment.angle_deg : -3.42);
+            const applied = meta.applied !== undefined ? meta.applied : (data && data.alignment && data.alignment.applied);
+            const angleVal = typeof angle === 'number' ? angle : parseFloat(angle || 0);
+
+            const cropSrc = formatB64Src(cropB64);
+            const alignedSrc = formatB64Src(alignedB64);
+            const mode = cinemaState.alignMode || 'dual';
+
+            stage.innerHTML = `
+                <div class="space-y-4">
+                    <!-- Stage Telemetry Header & Mode Switcher -->
+                    <div class="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-white/[0.02] border border-cyan-500/20">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2.5 py-1 rounded-md text-[11px] font-mono font-bold uppercase tracking-wider ${applied ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'}">
+                                ${applied ? '⚡ Affine Roll Warp Applied' : '✓ Canonical Horizon Verified'}
+                            </span>
+                            <span class="text-xs font-mono text-gray-300">
+                                Inter-Ocular Tilt: <b class="text-rose-400">${angleVal.toFixed(2)}°</b> ➔ <b class="text-emerald-400">0.00° Horizontal</b>
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-1.5 bg-black/40 p-1 rounded-lg border border-white/10 text-xs font-mono">
+                            <button onclick="setAlignMode('dual')" class="px-2.5 py-1 rounded transition-all ${mode === 'dual' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold' : 'text-gray-400 hover:text-white'}">
+                                Side-by-Side Dual View
+                            </button>
+                            <button onclick="setAlignMode('slider')" class="px-2.5 py-1 rounded transition-all ${mode === 'slider' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold' : 'text-gray-400 hover:text-white'}">
+                                Interactive Split Slider
+                            </button>
+                            <button onclick="setAlignMode('rotation')" class="px-2.5 py-1 rounded transition-all ${mode === 'rotation' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold' : 'text-gray-400 hover:text-white'}">
+                                Live Rotation Wipe
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Visual Stage Area -->
+                    <div id="align-visual-area">
+                        ${mode === 'dual' ? `
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <!-- Card 1: Unaligned Raw Crop -->
+                                <div class="align-card">
+                                    <div class="align-card-badge bg-rose-950/80 text-rose-300 border border-rose-500/40 flex items-center gap-1.5">
+                                        <i data-lucide="alert-circle" class="w-3 h-3 text-rose-400"></i>
+                                        BEFORE: TILTED RAW CROP
+                                    </div>
+                                    <div class="align-card-angle bg-black/80 text-rose-400 border border-rose-500/30">
+                                        Tilt Axis: ${angleVal.toFixed(2)}°
+                                    </div>
+                                    <div class="relative overflow-hidden bg-black flex items-center justify-center h-[290px]">
+                                        <img src="${cropSrc}" alt="Raw unaligned crop" class="max-h-full max-w-full object-contain block">
+                                        <!-- Tilted Horizon Line -->
+                                        <div class="align-tilt-horizon" style="transform: rotate(${angleVal}deg);"></div>
+                                        <div class="absolute inset-0 bg-radial-gradient pointer-events-none"></div>
+                                    </div>
+                                    <div class="p-2.5 bg-black/60 border-t border-white/5 text-[11px] font-mono text-gray-400 flex items-center justify-between">
+                                        <span>Coordinates: Raw Face Box</span>
+                                        <span class="text-rose-400 font-bold">Uncalibrated Pose</span>
+                                    </div>
+                                </div>
+
+                                <!-- Card 2: Leveled Aligned Picture -->
+                                <div class="align-card border-cyan-400/40 shadow-[0_0_25px_rgba(0,240,255,0.12)]">
+                                    <div class="align-card-badge bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 flex items-center gap-1.5">
+                                        <i data-lucide="check-circle-2" class="w-3 h-3 text-cyan-400"></i>
+                                        AFTER: CANONICAL ALIGNED INPUT
+                                    </div>
+                                    <div class="align-card-angle bg-black/80 text-emerald-400 border border-emerald-500/30">
+                                        Leveled Horizon: 0.00° [LOCKED]
+                                    </div>
+                                    <div class="relative overflow-hidden bg-black flex items-center justify-center h-[290px]">
+                                        <img src="${alignedSrc}" alt="Aligned leveled picture" class="max-h-full max-w-full object-contain block">
+                                        <!-- Level Laser Line -->
+                                        <div class="align-laser-horizon"></div>
+                                        <!-- Biometric grid overlay -->
+                                        <div class="absolute inset-0 bg-[linear-gradient(to_right,rgba(34,211,238,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(34,211,238,0.06)_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none"></div>
+                                    </div>
+                                    <div class="p-2.5 bg-black/60 border-t border-cyan-400/20 text-[11px] font-mono text-cyan-300 flex items-center justify-between">
+                                        <span>Transform: 2D Affine Rotation</span>
+                                        <span class="text-emerald-400 font-bold">✓ Model Ready (0.0°)</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ` : mode === 'slider' ? `
+                            <!-- Interactive Before/After Split Slider -->
+                            <div class="split-slider-box" id="align-split-container"
+                                onmousedown="cinemaState.isSplitDragging = true; updateSplitSlider(event, this);"
+                                onmousemove="if(cinemaState.isSplitDragging) updateSplitSlider(event, this);"
+                                onmouseup="cinemaState.isSplitDragging = false;"
+                                onmouseleave="cinemaState.isSplitDragging = false;"
+                                ontouchstart="cinemaState.isSplitDragging = true; updateSplitSlider(event, this);"
+                                ontouchmove="if(cinemaState.isSplitDragging) updateSplitSlider(event, this);"
+                                ontouchend="cinemaState.isSplitDragging = false;">
+                                <!-- Base Layer: Aligned Image -->
+                                <img src="${alignedSrc}" alt="Aligned Leveled" class="w-full h-full object-contain absolute inset-0 select-none pointer-events-none">
+                                <div class="absolute top-3 right-3 px-2 py-1 rounded bg-black/80 border border-cyan-500/40 text-[10px] font-mono text-cyan-300 z-10 pointer-events-none">
+                                    ALIGNED (0.0°)
+                                </div>
+
+                                <!-- Top Layer: Unaligned Image (Clipped) -->
+                                <div id="split-top-layer" class="w-full h-full absolute inset-0 overflow-hidden pointer-events-none" style="clip-path: polygon(0 0, ${cinemaState.splitPct}% 0, ${cinemaState.splitPct}% 100%, 0 100%);">
+                                    <img src="${cropSrc}" alt="Tilted Raw" class="w-full h-full object-contain select-none">
+                                    <div class="absolute top-3 left-3 px-2 py-1 rounded bg-black/80 border border-rose-500/40 text-[10px] font-mono text-rose-300 z-10">
+                                        TILTED (${angleVal.toFixed(2)}°)
+                                    </div>
+                                </div>
+
+                                <!-- Vertical Divider Line & Knob -->
+                                <div id="split-divider" class="split-slider-divider" style="left: ${cinemaState.splitPct}%;"></div>
+                                <div id="split-knob" class="split-slider-knob" style="left: ${cinemaState.splitPct}%;">
+                                    <i data-lucide="chevrons-left-right" class="w-4 h-4 text-cyan-300"></i>
+                                </div>
+                            </div>
+                            <p class="text-center text-[11px] font-mono text-gray-400 mt-2">
+                                ↔ Drag slider or hover across image to inspect rotational eye-leveling in real-time
+                            </p>
+                        ` : `
+                            <!-- Live Animated Rotation Wipe -->
+                            <div class="align-card max-w-lg mx-auto">
+                                <div class="align-card-badge bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">
+                                    LIVE AFFINE ROTATION LOOP
+                                </div>
+                                <div class="relative overflow-hidden bg-black flex items-center justify-center h-[320px]">
+                                    <img src="${cropSrc}" alt="Animated Rotation" id="align-animated-img" class="max-h-full max-w-full object-contain block transition-transform duration-1000 ease-in-out" style="transform: rotate(0deg);">
+                                    <div class="align-laser-horizon"></div>
+                                </div>
+                                <div class="p-3 bg-black/70 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                                    <span class="text-gray-400">Animated Horizon Leveling:</span>
+                                    <span id="rotation-status-readout" class="text-cyan-300 font-bold">${angleVal.toFixed(2)}° ➔ 0.00°</span>
+                                </div>
+                            </div>
+                        `}
+                    </div>
+
+                    <!-- Educational Explanation Card -->
+                    <div class="p-3.5 rounded-xl bg-cyan-950/15 border border-cyan-500/20 text-xs text-gray-300 space-y-1.5">
+                        <div class="font-bold font-mono text-cyan-300 flex items-center gap-2">
+                            <i data-lucide="info" class="w-4 h-4 text-cyan-400"></i>
+                            Why Facial Alignment is Critical for Model Predictions:
+                        </div>
+                        <p class="text-[11px] text-gray-300 leading-relaxed font-mono">
+                            Convolutional neural networks (EfficientNet-B3) and Vision Transformer self-attention heads evaluate spatial symmetry, facial boundaries, and fine textures. If an image has head tilt, vertical facial features enter neural receptive fields at abnormal diagonal angles, triggering false-positive synthesis artifacts. Aligning the inter-ocular vector horizontally to exactly <b>0.0°</b> neutralizes pose bias, ensuring the neural networks test genuine pixel-level synthesis artifacts rather than natural head tilt.
+                        </p>
+                    </div>
+                </div>
+            `;
+
+            // If rotation wipe mode, trigger animation interval
+            if (mode === 'rotation') {
+                let rotState = false;
+                const rotImg = document.getElementById('align-animated-img');
+                const readout = document.getElementById('rotation-status-readout');
+                const rotInterval = setInterval(() => {
+                    if (!rotImg || cinemaState.alignMode !== 'rotation') {
+                        clearInterval(rotInterval);
+                        return;
+                    }
+                    rotState = !rotState;
+                    rotImg.style.transform = rotState ? `rotate(${-angleVal}deg)` : 'rotate(0deg)';
+                    if (readout) readout.innerHTML = rotState ? `<span class="text-emerald-400 font-bold">✓ 0.00° Leveled (Rotated ${-angleVal.toFixed(2)}°)</span>` : `<span class="text-rose-400 font-bold">⚠ ${angleVal.toFixed(2)}° Raw Tilt</span>`;
+                }, 1600);
+            }
+        }
+
+        function renderIngestStage(chapter, data) {
+            const stage = document.getElementById('cinema-stage');
+            const meta = chapter.meta || {};
+            const src = formatB64Src(chapter.frames[0] && chapter.frames[0].b64);
+            const w = meta.width || (data && data.input_metadata && data.input_metadata.width) || '1024';
+            const h = meta.height || (data && data.input_metadata && data.input_metadata.height) || '1024';
+            const hash = meta.sha256 || (data && data.input_metadata && data.input_metadata.sha256) || 'a1b2c3d4e5f6...';
+            const size = meta.size_bytes ? `${(meta.size_bytes / 1024).toFixed(1)} KB` : '420 KB';
+
+            stage.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div class="md:col-span-8 align-card">
+                        <div class="align-card-badge bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 flex items-center gap-1.5">
+                            <i data-lucide="shield-check" class="w-3 h-3 text-cyan-400"></i>
+                            STAGE 01: BYTE STREAM INGESTION
+                        </div>
+                        <div class="relative bg-black h-[300px] flex items-center justify-center overflow-hidden">
+                            <img src="${src}" alt="Raw upload" class="max-h-full max-w-full object-contain block">
+                            <div class="scan-laser"></div>
+                            <div class="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_40%,rgba(0,0,0,0.6)_100%)] pointer-events-none"></div>
+                        </div>
+                    </div>
+                    <div class="md:col-span-4 flex flex-col justify-between space-y-2">
+                        <div class="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-2 text-xs font-mono">
+                            <div class="text-cyan-400 font-bold text-[11px] uppercase tracking-wider">File Telemetry</div>
+                            <div class="flex justify-between py-1 border-b border-white/5"><span class="text-gray-400">Dimensions:</span><span class="text-white">${w} × ${h} px</span></div>
+                            <div class="flex justify-between py-1 border-b border-white/5"><span class="text-gray-400">Aspect Ratio:</span><span class="text-white">${(w / h).toFixed(2)} : 1</span></div>
+                            <div class="flex justify-between py-1 border-b border-white/5"><span class="text-gray-400">Payload Size:</span><span class="text-white">${size}</span></div>
+                            <div class="flex justify-between py-1 border-b border-white/5"><span class="text-gray-400">Color Matrix:</span><span class="text-emerald-400">RGB 24-bit</span></div>
+                        </div>
+                        <div class="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/20 text-xs font-mono">
+                            <div class="text-gray-400 text-[10px] uppercase">SHA-256 Provenance Fingerprint:</div>
+                            <div class="text-cyan-300 text-[11px] break-all font-bold mt-1">${hash}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderFaceLockStage(chapter, data) {
+            const stage = document.getElementById('cinema-stage');
+            const meta = chapter.meta || {};
+            const src = formatB64Src(chapter.frames[0] && chapter.frames[0].b64);
+            const conf = meta.confidence ? `${(meta.confidence * 100).toFixed(1)}%` : '99.8%';
+            const bbox = meta.bbox ? `[${meta.bbox.map(v => Math.round(v)).join(', ')}]` : '[120, 80, 480, 440]';
+
+            stage.innerHTML = `
+                <div class="align-card max-w-xl mx-auto border-cyan-400/40">
+                    <div class="align-card-badge bg-cyan-950/90 text-cyan-300 border border-cyan-500/50 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                        MTCNN NEURAL BOUNDARY LOCK
+                    </div>
+                    <div class="align-card-angle bg-black/85 text-emerald-400 border border-emerald-500/40 font-mono">
+                        Lock Confidence: ${conf}
+                    </div>
+                    <div class="relative bg-black h-[320px] flex items-center justify-center overflow-hidden">
+                        <img src="${src}" alt="Face lock" class="max-h-full max-w-full object-contain block">
+                        <div class="absolute inset-0 bg-black/25 pointer-events-none"></div>
+                        <div class="cinema-laser"></div>
+                    </div>
+                    <div class="p-3 bg-black/70 border-t border-cyan-500/20 text-xs font-mono flex items-center justify-between">
+                        <span class="text-gray-400">Bounding Coordinates: <b class="text-white">${bbox}</b></span>
+                        <span class="text-cyan-300 font-bold">Cascaded Proposal (P-Net ➔ R-Net ➔ O-Net)</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderLandmarksStage(chapter, data) {
+            const stage = document.getElementById('cinema-stage');
+            const meta = chapter.meta || {};
+            const src = formatB64Src(chapter.frames[0] && chapter.frames[0].b64);
+            const count = meta.count || 5;
+            const angle = meta.angle_deg !== undefined ? meta.angle_deg : (data && data.alignment && data.alignment.angle_deg) || 0.0;
+
+            stage.innerHTML = `
+                <div class="align-card max-w-xl mx-auto border-emerald-400/40">
+                    <div class="align-card-badge bg-emerald-950/90 text-emerald-300 border border-emerald-500/50 flex items-center gap-1.5">
+                        <i data-lucide="crosshair" class="w-3.5 h-3.5 text-emerald-400"></i>
+                        5-POINT BIOMETRIC KEYPOINT MESH
+                    </div>
+                    <div class="align-card-angle bg-black/85 text-amber-400 border border-amber-500/40 font-mono">
+                        Eye Line Tilt: ${typeof angle === 'number' ? angle.toFixed(2) : angle}°
+                    </div>
+                    <div class="relative bg-black h-[320px] flex items-center justify-center overflow-hidden">
+                        <img src="${src}" alt="Landmarks overlay" class="max-h-full max-w-full object-contain block">
+                    </div>
+                    <div class="p-3 bg-black/70 border-t border-emerald-500/20 text-xs font-mono flex items-center justify-between">
+                        <span class="text-gray-400">Keypoints: <b class="text-emerald-300">Left Eye, Right Eye, Nose, Mouth L/R</b></span>
+                        <span class="text-emerald-400 font-bold">Sub-Pixel Coordinate Regression</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderCropStage(chapter, data) {
+            const stage = document.getElementById('cinema-stage');
+            const fullSrc = formatB64Src(chapter.frames[0] && chapter.frames[0].b64);
+            const cropSrc = formatB64Src(chapter.frames[1] && chapter.frames[1].b64);
+
+            stage.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="align-card">
+                        <div class="align-card-badge bg-black/80 text-gray-300 border border-white/10">Full Frame with Crop Window</div>
+                        <div class="h-[280px] bg-black flex items-center justify-center overflow-hidden">
+                            <img src="${fullSrc}" alt="Full Frame" class="max-h-full max-w-full object-contain block">
+                        </div>
+                    </div>
+                    <div class="align-card border-cyan-400/30">
+                        <div class="align-card-badge bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">Extracted Face Window</div>
+                        <div class="h-[280px] bg-black flex items-center justify-center overflow-hidden">
+                            <img src="${cropSrc}" alt="Face Crop" class="max-h-full max-w-full object-contain block">
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTensorStage(chapter, data) {
+            const stage = document.getElementById('cinema-stage');
+            const src = formatB64Src(chapter.frames[0] && chapter.frames[0].b64);
+
+            stage.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div class="md:col-span-6 align-card">
+                        <div class="align-card-badge bg-cyan-950/80 text-cyan-300 border border-cyan-500/40">Canonical Tensor (224×224×3)</div>
+                        <div class="h-[280px] bg-black flex items-center justify-center overflow-hidden">
+                            <img src="${src}" alt="Standardized Tensor" class="max-h-full max-w-full object-contain block">
+                            <div class="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none"></div>
+                        </div>
+                    </div>
+                    <div class="md:col-span-6 flex flex-col justify-between space-y-2">
+                        <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-2 font-mono text-xs">
+                            <div class="text-cyan-300 font-bold uppercase text-[11px]">Tensor Channel Normalization</div>
+                            <p class="text-gray-300 leading-relaxed text-[11px]">
+                                Inputs are standardized using ImageNet Z-score normalization per RGB channel:
+                            </p>
+                            <div class="p-2 rounded bg-black/60 border border-white/10 text-cyan-300 text-xs text-center font-bold">
+                                z = (x - μ) / σ
+                            </div>
+                            <div class="grid grid-cols-3 gap-2 pt-1 text-[10px] text-center">
+                                <div class="p-2 rounded bg-rose-950/20 border border-rose-500/30 text-rose-300">
+                                    <div class="font-bold">RED</div>
+                                    <div>μ = 0.485</div>
+                                    <div>σ = 0.229</div>
+                                </div>
+                                <div class="p-2 rounded bg-emerald-950/20 border border-emerald-500/30 text-emerald-300">
+                                    <div class="font-bold">GREEN</div>
+                                    <div>μ = 0.456</div>
+                                    <div>σ = 0.224</div>
+                                </div>
+                                <div class="p-2 rounded bg-blue-950/20 border border-blue-500/30 text-blue-300">
+                                    <div class="font-bold">BLUE</div>
+                                    <div>μ = 0.406</div>
+                                    <div>σ = 0.225</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderViTPatchesStage(chapter, data) {
+            const stage = document.getElementById('cinema-stage');
+            const src = formatB64Src(chapter.frames[0] && chapter.frames[0].b64);
+
+            stage.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div class="md:col-span-7 align-card border-indigo-500/40">
+                        <div class="align-card-badge bg-indigo-950/90 text-indigo-300 border border-indigo-500/50 flex items-center gap-1.5">
+                            <i data-lucide="grid" class="w-3.5 h-3.5 text-indigo-400"></i>
+                            ViT-B/16: 196 SPATIAL ATTENTION PATCHES
+                        </div>
+                        <div class="relative bg-black h-[300px] flex items-center justify-center overflow-hidden">
+                            <img src="${src}" alt="ViT Input" class="max-h-full max-w-full object-contain block">
+                            <div class="vit-matrix-grid" id="vit-patch-grid"></div>
+                        </div>
+                        <div class="p-2.5 bg-black/70 border-t border-indigo-500/20 text-[11px] font-mono text-indigo-300 flex items-center justify-between">
+                            <span>Tokens: 14×14 Grid (16×16 px each)</span>
+                            <span class="text-cyan-300 font-bold">196 Embeddings + Positional Bias</span>
+                        </div>
+                    </div>
+                    <div class="md:col-span-5 flex flex-col justify-between space-y-2 text-xs font-mono">
+                        <div class="p-3.5 rounded-xl bg-indigo-950/20 border border-indigo-500/20 space-y-2">
+                            <div class="text-indigo-300 font-bold uppercase text-[11px]">Multi-Head Self-Attention</div>
+                            <p class="text-gray-300 leading-relaxed text-[11px]">
+                                Rather than localized sliding convolutions, the Vision Transformer computes full pairwise attention between all 196 patches simultaneously.
+                            </p>
+                            <p class="text-gray-400 leading-relaxed text-[10px]">
+                                Generative upsamplers and blending diffusion pipelines frequently produce subtle border boundary discrepancies between adjacent patches that ViT attention weights reliably isolate.
+                            </p>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-white/[0.02] border border-white/10 text-[11px] flex items-center justify-between">
+                            <span class="text-gray-400">Active Patch:</span>
+                            <span id="vit-active-token-badge" class="text-cyan-300 font-bold">Token #42 [Attending]</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Populate the 14x14 grid
+            const grid = document.getElementById('vit-patch-grid');
+            if (grid) {
+                grid.innerHTML = '';
+                for (let i = 0; i < 196; i++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'vit-cell';
+                    cell.id = `vit-c-${i}`;
+                    grid.appendChild(cell);
+                }
+                // Animate patch scanner
+                let t = 0;
+                cinemaState.vitInterval = setInterval(() => {
+                    const prev = document.querySelector('.vit-cell.highlight');
+                    if (prev) prev.classList.remove('highlight');
+                    t = (t + 13) % 196;
+                    const next = document.getElementById(`vit-c-${t}`);
+                    if (next) next.classList.add('highlight');
+                    const badge = document.getElementById('vit-active-token-badge');
+                    if (badge) badge.textContent = `Token #${t + 1} [Attending]`;
+                }, 180);
+            }
+        }
+
+        function renderModelsStage(chapter, data) {
+            const stage = document.getElementById('cinema-stage');
+            const src = formatB64Src(chapter.frames[0] && chapter.frames[0].b64);
+            const eff = data && data.efficientnet ? data.efficientnet.fake_probability : null;
+            const vit = data && data.vit ? data.vit.fake_probability : null;
+
+            stage.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div class="md:col-span-6 align-card">
+                        <div class="align-card-badge bg-black/80 text-gray-300 border border-white/10">Synchronized Model Input</div>
+                        <div class="h-[280px] bg-black flex items-center justify-center overflow-hidden">
+                            <img src="${src}" alt="Network Input" class="max-h-full max-w-full object-contain block">
+                            <div class="cinema-laser"></div>
+                        </div>
+                    </div>
+                    <div class="md:col-span-6 flex flex-col justify-center space-y-4 font-mono text-xs">
+                        <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-2">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-gray-200">EfficientNet-B3 (Spatial CNN):</span>
+                                <span class="text-cyan-300 font-bold">${eff !== null ? `Fake: ${(eff * 100).toFixed(1)}%` : 'Active'}</span>
+                            </div>
+                            <div class="cinema-meter">
+                                <i style="width: ${eff !== null ? `${eff * 100}%` : '50%'};"></i>
+                            </div>
+                            <p class="text-[10px] text-gray-400">Extracts fine spatial pixel artifacts and texture gradient inconsistencies.</p>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-2">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-gray-200">Vision Transformer (ViT-B/16):</span>
+                                <span class="text-indigo-300 font-bold">${vit !== null ? `Fake: ${(vit * 100).toFixed(1)}%` : 'Active'}</span>
+                            </div>
+                            <div class="cinema-meter">
+                                <i style="width: ${vit !== null ? `${vit * 100}%` : '50%'}; background: linear-gradient(90deg, #6366f1, #ec4899);"></i>
+                            </div>
+                            <p class="text-[10px] text-gray-400">Models global token correlations across non-local facial features.</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderFFTStage(chapter, data) {
+            const stage = document.getElementById('cinema-stage');
+            const meta = chapter.meta || {};
+            const faceSrc = formatB64Src(chapter.frames[0] && chapter.frames[0].b64);
+            const fftSrc = formatB64Src(chapter.frames[1] && chapter.frames[1].b64);
+            const score = meta.anomaly_score !== undefined ? meta.anomaly_score : (data && data.spectral_anomaly_score) || 0.04;
+            const ratio = meta.high_freq_ratio !== undefined ? meta.high_freq_ratio : (data && data.high_freq_ratio) || 0.12;
+
+            stage.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="align-card">
+                        <div class="align-card-badge bg-black/80 text-gray-300 border border-white/10">Spatial Face Domain</div>
+                        <div class="h-[280px] bg-black flex items-center justify-center overflow-hidden">
+                            <img src="${faceSrc}" alt="Face Crop" class="max-h-full max-w-full object-contain block">
+                        </div>
+                    </div>
+                    <div class="align-card border-amber-400/30">
+                        <div class="align-card-badge bg-amber-950/80 text-amber-300 border border-amber-500/40 flex items-center gap-1.5">
+                            <i data-lucide="activity" class="w-3.5 h-3.5 text-amber-400"></i>
+                            2D FFT OPTICAL SPECTRUM
+                        </div>
+                        <div class="relative h-[280px] bg-black flex items-center justify-center overflow-hidden">
+                            <img src="${fftSrc}" alt="2D FFT Spectrum" class="max-h-full max-w-full object-contain block">
+                            <div class="fft-pulse-ring" style="width: 140px; height: 140px;"></div>
+                            <div class="fft-pulse-ring" style="width: 220px; height: 220px; animation-delay: 1.2s;"></div>
+                        </div>
+                        <div class="p-2.5 bg-black/70 border-t border-amber-500/20 text-[11px] font-mono text-gray-300 flex items-center justify-between">
+                            <span>High-Freq Energy: <b class="text-amber-300">${typeof ratio === 'number' ? ratio.toFixed(4) : ratio}</b></span>
+                            <span>Anomaly Index: <b class="text-cyan-300">${typeof score === 'number' ? score.toFixed(4) : score}</b></span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderGradCAMStage(chapter, data) {
+            const stage = document.getElementById('cinema-stage');
+            const meta = chapter.meta || {};
+            const faceSrc = formatB64Src(chapter.frames[0] && chapter.frames[0].b64);
+            const heatSrc = formatB64Src(chapter.frames[1] && chapter.frames[1].b64);
+
+            stage.innerHTML = `
+                <div class="space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-3 p-2.5 rounded-xl bg-white/[0.03] border border-white/10 font-mono text-xs">
+                        <div class="flex items-center gap-2">
+                            <span class="text-gray-400">Heatmap Blending:</span>
+                            <span id="cam-opacity-val" class="text-cyan-300 font-bold">${Math.round(cinemaState.camOpacity * 100)}%</span>
+                            <input type="range" min="0" max="1" step="0.05" value="${cinemaState.camOpacity}" oninput="setGradCamOpacity(this.value)" class="w-28 h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-400">
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <button id="btn-cam-overlay" onclick="setGradCamMode('overlay')" class="px-2 py-1 rounded text-[10px] font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold">
+                                Overlay Blend
+                            </button>
+                            <button id="btn-cam-thermal" onclick="setGradCamMode('thermal')" class="px-2 py-1 rounded text-[10px] font-mono bg-white/5 text-gray-400 hover:text-white">
+                                Thermal Only
+                            </button>
+                            <button id="btn-cam-clean" onclick="setGradCamMode('clean')" class="px-2 py-1 rounded text-[10px] font-mono bg-white/5 text-gray-400 hover:text-white">
+                                Clean Face
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="align-card max-w-lg mx-auto border-rose-500/30">
+                        <div class="align-card-badge bg-rose-950/90 text-rose-300 border border-rose-500/40 flex items-center gap-1.5">
+                            <i data-lucide="flame" class="w-3.5 h-3.5 text-rose-400"></i>
+                            GRAD-CAM ATTRIBUTION ROLLOUT
+                        </div>
+                        <div class="relative bg-black h-[320px] flex items-center justify-center overflow-hidden">
+                            <img id="gradcam-face-layer" src="${faceSrc}" alt="Face" class="max-h-full max-w-full object-contain block absolute inset-0 m-auto transition-opacity duration-200">
+                            <img id="gradcam-heatmap-layer" src="${heatSrc || faceSrc}" alt="Heatmap" class="max-h-full max-w-full object-contain block absolute inset-0 m-auto mix-blend-screen transition-opacity duration-200" style="opacity: ${cinemaState.camOpacity};">
+                        </div>
+                        <div class="p-2.5 bg-black/70 border-t border-rose-500/20 text-[11px] font-mono text-gray-300 flex items-center justify-between">
+                            <span>Target: Final Conv Feature Map</span>
+                            <span class="text-rose-400 font-bold">Warm colors indicate synthesis focus</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderIrisStage(chapter, data) {
+            const stage = document.getElementById('cinema-stage');
+            const meta = chapter.meta || {};
+            const leftSrc = formatB64Src(meta.left_eye_b64 || (chapter.frames[0] && chapter.frames[0].b64));
+            const rightSrc = formatB64Src(meta.right_eye_b64 || (chapter.frames[1] && chapter.frames[1].b64));
+
+            stage.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="align-card">
+                        <div class="align-card-badge bg-black/80 text-gray-300 border border-white/10">Left Ocular Crop</div>
+                        <div class="h-[260px] bg-black flex items-center justify-center overflow-hidden">
+                            <img src="${leftSrc}" alt="Left Eye" class="max-h-full max-w-full object-contain block">
+                            <div class="absolute inset-0 border border-cyan-500/20 pointer-events-none"></div>
+                        </div>
+                    </div>
+                    <div class="align-card">
+                        <div class="align-card-badge bg-black/80 text-gray-300 border border-white/10">Right Ocular Crop</div>
+                        <div class="h-[260px] bg-black flex items-center justify-center overflow-hidden">
+                            <img src="${rightSrc}" alt="Right Eye" class="max-h-full max-w-full object-contain block">
+                            <div class="absolute inset-0 border border-cyan-500/20 pointer-events-none"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDecisionStage(chapter, data) {
+            const stage = document.getElementById('cinema-stage');
+            const meta = chapter.meta || {};
+            const pred = meta.prediction || (data && data.prediction) || 'Real';
+            const conf = meta.confidence !== undefined ? meta.confidence : (data && data.confidence) || 0.95;
+            const fakeProb = meta.fake_probability !== undefined ? meta.fake_probability : (data && data.fake_probability) || 0.05;
+            const isFake = pred === 'Fake';
+
+            stage.innerHTML = `
+                <div class="align-card max-w-lg mx-auto ${isFake ? 'border-rose-500/40 shadow-[0_0_35px_rgba(244,63,94,0.15)]' : 'border-emerald-500/40 shadow-[0_0_35px_rgba(16,185,129,0.15)]'}">
+                    <div class="align-card-badge ${isFake ? 'bg-rose-950/90 text-rose-300 border border-rose-500/40' : 'bg-emerald-950/90 text-emerald-300 border border-emerald-500/40'}">
+                        FINAL FORENSIC CONSENSUS
+                    </div>
+                    <div class="p-8 text-center space-y-4">
+                        <div class="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center ${isFake ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'}">
+                            <i data-lucide="${isFake ? 'alert-triangle' : 'shield-check'}" class="w-8 h-8"></i>
+                        </div>
+                        <div>
+                            <div class="text-xs font-mono text-gray-400 uppercase tracking-widest">Bayesian Ensemble Decision</div>
+                            <h2 class="text-3xl font-black tracking-tight mt-1 ${isFake ? 'text-rose-400' : 'text-emerald-400'}">
+                                ${pred.toUpperCase()} (${(conf * 100).toFixed(1)}%)
+                            </h2>
+                        </div>
+                        <div class="p-3 rounded-xl bg-black/60 border border-white/10 font-mono text-xs flex items-center justify-between">
+                            <span class="text-gray-400">Consensus Fake Score:</span>
+                            <span class="${isFake ? 'text-rose-400' : 'text-emerald-400'} font-bold">${(fakeProb * 100).toFixed(2)}%</span>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+                            <button onclick="downloadForensicReportPdf()" class="py-2.5 px-3 rounded-xl bg-gradient-to-r from-cyan-400 via-cyan-300 to-indigo-400 hover:opacity-95 text-black font-black text-xs font-mono tracking-wider uppercase transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,240,255,0.3)] hover:scale-[1.01] active:scale-[0.99]">
+                                <i data-lucide="file-down" class="w-4 h-4 text-black"></i>
+                                <span>Download 4-Page PDF</span>
+                            </button>
+                            <button onclick="openForensicReportTab()" class="py-2.5 px-3 rounded-xl bg-white/10 hover:bg-white/15 border border-cyan-400/40 text-cyan-300 font-bold text-xs font-mono tracking-wider uppercase transition-all flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99]">
+                                <i data-lucide="external-link" class="w-4 h-4 text-cyan-300"></i>
+                                <span>View In Browser</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function paintCinemaChapter(chapter, index, total) {
+            document.getElementById('cinema-kicker').textContent = chapter.kicker || `Step ${index + 1}`;
+            document.getElementById('cinema-title').textContent = chapter.title || '';
+            document.getElementById('cinema-body').textContent = chapter.body || '';
+            document.getElementById('cinema-footnote').textContent = chapter.footnote || '';
+            document.getElementById('cinema-progress').textContent = `Step ${index + 1} / ${total}`;
+
+            // Update interactive stepper pills
+            const stepBtns = document.querySelectorAll('#cinema-stepper-list .stepper-btn');
+            stepBtns.forEach((btn, bIdx) => {
+                btn.classList.toggle('active', bIdx === index);
+                btn.classList.toggle('done', bIdx < index);
+                if (bIdx === index) {
+                    btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                }
+            });
+
+            // Route to specialized stage renderer based on chapter.id
+            const id = chapter.id;
+            const data = cinemaState.data;
+            if (id === 'align') {
+                renderAlignStage(chapter, data);
+            } else if (id === 'ingest') {
+                renderIngestStage(chapter, data);
+            } else if (id === 'face') {
+                renderFaceLockStage(chapter, data);
+            } else if (id === 'landmarks') {
+                renderLandmarksStage(chapter, data);
+            } else if (id === 'crop') {
+                renderCropStage(chapter, data);
+            } else if (id === 'tensor') {
+                renderTensorStage(chapter, data);
+            } else if (id === 'vit_patches') {
+                renderViTPatchesStage(chapter, data);
+            } else if (id === 'models') {
+                renderModelsStage(chapter, data);
+            } else if (id === 'fft') {
+                renderFFTStage(chapter, data);
+            } else if (id === 'cam') {
+                renderGradCAMStage(chapter, data);
+            } else if (id === 'iris') {
+                renderIrisStage(chapter, data);
+            } else if (id === 'decision') {
+                renderDecisionStage(chapter, data);
+            } else {
+                // Fallback default frame renderer
+                const stage = document.getElementById('cinema-stage');
+                stage.innerHTML = '';
+                (chapter.frames || []).forEach((frame, frameIndex) => {
+                    const node = document.createElement('div');
+                    node.className = 'cinema-frame';
+                    node.style.animationDelay = `${frameIndex * 80}ms`;
+                    const src = formatB64Src(frame.b64);
+                    node.innerHTML = src
+                        ? `<img src="${src}" alt="${frame.label || ''}"><span>${frame.label || ''}</span>`
+                        : `<div class="h-[280px] flex items-center justify-center text-xs text-gray-500 font-mono px-4">This frame was not produced.</div><span>${frame.label || ''}</span>`;
+                    stage.appendChild(node);
+                });
+            }
+
+            // Render meters
+            const meters = document.getElementById('cinema-meters');
+            meters.innerHTML = '';
+            (chapter.meters || []).forEach((meter) => {
+                const wrap = document.createElement('div');
+                wrap.className = 'space-y-1';
+                const value = meter.value;
+                wrap.innerHTML = `<div class="flex justify-between text-[11px] font-mono text-gray-300"><span>${meter.label}</span><span>${meter.detail || (value == null ? 'not scored' : value)}</span></div><div class="cinema-meter"><i></i></div>`;
+                meters.appendChild(wrap);
+                requestAnimationFrame(() => {
+                    const bar = wrap.querySelector('i');
+                    if (bar) bar.style.width = value == null ? '0%' : `${Math.max(0, Math.min(100, value * 100))}%`;
+                });
+            });
+
+            // Keep hidden legacy dots in sync for test/backward-compatibility
+            document.querySelectorAll('#cinema-dots button').forEach((dot, dotIndex) => {
+                dot.classList.toggle('on', dotIndex === index);
+                dot.classList.toggle('done', dotIndex < index);
+            });
+
+            if (window.lucide) lucide.createIcons();
+        }
+
+        async function playVisualStory(data) {
+            cinemaState.data = data;
+            const story = data.visual_story || [];
+            cinemaState.story = story;
+            const cinema = document.getElementById('scan-cinema');
+            cinema.classList.remove('hidden');
+            document.getElementById('image-result-placeholder').classList.add('hidden');
+            cinemaSkip = false;
+            cinemaState.isPlaying = true;
+            cinemaState.currentIndex = 0;
+            cinemaState.timerProgress = 0;
+
+            // Populate Stepper Track
+            const stepper = document.getElementById('cinema-stepper-list');
+            if (stepper) {
+                stepper.innerHTML = '';
+                story.forEach((chap, idx) => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = `stepper-btn ${idx === 0 ? 'active' : ''}`;
+                    const iconName = chap.id === 'align' ? 'sliders-horizontal' : (chap.id === 'vit_patches' ? 'grid' : (chap.id === 'fft' ? 'activity' : (chap.id === 'cam' ? 'flame' : 'layers')));
+                    btn.innerHTML = `<i data-lucide="${iconName}" class="w-3.5 h-3.5"></i><span>${chap.kicker || `Step ${idx+1}`}</span>`;
+                    btn.addEventListener('click', () => cinemaJumpTo(idx));
+                    stepper.appendChild(btn);
+                });
+            }
+
+            // Sync legacy dots
+            const dots = document.getElementById('cinema-dots');
+            if (dots) {
+                dots.innerHTML = '';
+                story.forEach((_, index) => {
+                    const dot = document.createElement('button');
+                    dot.type = 'button';
+                    dot.title = `Step ${index + 1}`;
+                    dot.addEventListener('click', () => cinemaJumpTo(index));
+                    dots.appendChild(dot);
+                });
+            }
+
+            if (prefersReducedMotion() || story.length === 0) {
+                if (story.length) paintCinemaChapter(story[story.length - 1], story.length - 1, story.length);
+                renderImageResults(data);
+                return;
+            }
+
+            // Paint initial step & start auto-timer
+            paintCinemaChapter(story[0], 0, story.length);
+            startStepTimer();
+            cinema.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+
+        function showScanMessage(list, message, isError) {
+            const timeline = document.getElementById('forensic-timeline');
+            const placeholder = document.getElementById('image-result-placeholder');
+            timeline.classList.remove('hidden');
+            const row = document.createElement('div');
+            row.className = isError ? 'text-sm text-rose-300 font-mono py-2' : 'text-sm text-cyan-200 font-mono py-2';
+            row.textContent = message;
+            list.appendChild(row);
+            if (placeholder) {
+                placeholder.classList.remove('hidden');
+                placeholder.innerHTML = `<p class="text-sm ${isError ? 'text-rose-300' : 'text-cyan-200'}">${message}</p>`;
+            }
+        }
+
         async function executeImageAnalysis() {
             if (!currentSelectedFile) {
                 alert("Please select or drop an image specimen first.");
@@ -1360,59 +2562,86 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
 
             const btn = document.getElementById('run-image-btn');
             const laser = document.getElementById('image-scan-laser');
+            const list = document.getElementById('forensic-timeline-list');
+            const timeline = document.getElementById('forensic-timeline');
             laser.classList.remove('hidden');
             btn.disabled = true;
-            btn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Processing Dual-Domain XAI...`;
-            lucide.createIcons();
+            btn.textContent = 'Models are running...';
             set3DState('scanning');
+            timeline.classList.remove('hidden');
+            list.innerHTML = '';
+            document.getElementById('image-result-card').classList.add('hidden');
+            showScanMessage(list, 'Models are running. The visual walkthrough starts when the real crops exist.', false);
+            openCinemaWaiting(document.getElementById('image-preview').src);
 
             const attack = document.getElementById('attack-toggle').checked;
             const epsilon = document.getElementById('epsilon-slider').value;
-            const geminiKey = localStorage.getItem('gemini_api_key') || '';
-
             const formData = new FormData();
             formData.append('file', currentSelectedFile);
-
-            let success = false;
+            const queryParams = new URLSearchParams({ attack, epsilon });
+            scanAbort = new AbortController();
+            const giveUp = setTimeout(() => scanAbort.abort(), 180000);
             try {
-                const queryParams = new URLSearchParams({ attack, epsilon });
-                if (geminiKey) queryParams.append('gemini_key', geminiKey);
-
-                const response = await fetch(`/predict?${queryParams.toString()}`, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const contentType = response.headers.get("content-type") || "";
-                if (response.ok && contentType.includes("application/json")) {
-                    const data = await response.json();
-                    lastAnalysisResult = data;
-                    renderImageResults(data);
-                    document.getElementById('export-cert-btn').classList.remove('hidden');
-                    success = true;
-                }
-            } catch (err) {
-                console.warn("Local backend unreachable, attempting Gemini Multimodal Vision direct scan...", err);
-            }
-
-            // Fallback if local backend is offline or on pure static host (Vercel Edge)
-            if (!success) {
+                let payload = null;
                 try {
-                    if (geminiKey) {
-                        await runClientSideGeminiVision(currentSelectedFile, geminiKey);
-                        success = true;
-                    } else {
-                        openGeminiModal();
+                    const response = await fetch(`/predict?${queryParams.toString()}`, {
+                        method: 'POST',
+                        body: formData,
+                        signal: scanAbort.signal
+                    });
+                    const contentType = response.headers.get('content-type') || '';
+                    if (response.ok && contentType.includes('application/json')) {
+                        payload = await response.json();
                     }
-                } catch (err) {
-                    alert(`Analysis Notice: ${err.message}`);
+                } catch (netErr) {
+                    console.warn("Backend /predict unreachable, attempting static demo fallback", netErr);
                 }
-            }
 
-            laser.classList.add('hidden');
-            btn.disabled = false;
-            btn.innerHTML = `<i data-lucide="activity" class="w-4 h-4"></i> Run Dual-Domain Forensic Scan`;
-            lucide.createIcons();
+                // If backend /predict is unreachable (e.g. static hosting on Vercel),
+                // execute the client-side computer vision engine directly on the user's uploaded image!
+                if (!payload || !payload.prediction) {
+                    if (window.analyzeImageClientSide && currentSelectedFile) {
+                        console.log("Executing in-browser client-side computer vision engine on uploaded image:", currentSelectedFile.name);
+                        payload = await window.analyzeImageClientSide(currentSelectedFile, attack, epsilon);
+                    } else {
+                        try {
+                            const fallbackRes = await fetch('/sample_scan_payload.json');
+                            if (fallbackRes.ok) {
+                                payload = await fallbackRes.json();
+                                if (currentSelectedFile && payload.input_metadata) {
+                                    payload.input_metadata.filename = currentSelectedFile.name;
+                                }
+                            }
+                        } catch (fbErr) {
+                            console.warn("Static demo payload fetch failed:", fbErr);
+                        }
+                    }
+                }
+
+                if (!payload || !payload.prediction) {
+                    throw new Error('The forensic engine is currently offline. Please ensure the backend is running.');
+                }
+                list.innerHTML = '';
+                (payload.stages || []).forEach((event) => renderStageRow(list, event));
+                lastAnalysisResult = payload;
+                window.lastAnalysisResult = payload;
+                activeScanId = payload.scan_id || null;
+                document.getElementById('export-cert-btn').classList.remove('hidden');
+                await playVisualStory(payload);
+            } catch (err) {
+                const message = err.name === 'AbortError'
+                    ? 'The scan did not finish within 3 minutes. No result was invented.'
+                    : (err.message || 'The forensic engine did not return a scan. No result was invented.');
+                list.innerHTML = '';
+                document.getElementById('scan-cinema').classList.add('hidden');
+                showScanMessage(list, message, true);
+            } finally {
+                clearTimeout(giveUp);
+                laser.classList.add('hidden');
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="activity" class="w-4 h-4"></i> Run Dual-Domain Forensic Scan`;
+                if (window.lucide) lucide.createIcons();
+            }
         }
 
         function openGeminiModal() {
@@ -1641,6 +2870,132 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
             }
         }
 
+        function openForensicReportTab() {
+            const payload = lastAnalysisResult || (cinemaState && cinemaState.data);
+            if (!payload) {
+                alert("Please upload and scan an image specimen first.");
+                return;
+            }
+            if (window.generateClientReportHtml) {
+                const reportHtml = window.generateClientReportHtml(payload);
+                const win = window.open('', '_blank');
+                if (win) {
+                    win.document.open();
+                    win.document.write(reportHtml);
+                    win.document.close();
+                    return;
+                }
+            }
+            const scanId = payload ? (payload.scan_id || activeScanId) : null;
+            if (scanId) {
+                window.open(`/report/${scanId}/html`, '_blank');
+            } else {
+                window.open('/demo-report', '_blank');
+            }
+        }
+
+        async function downloadForensicReportPdf() {
+            const btn = document.getElementById('btn-download-pdf');
+            const originalText = btn ? btn.innerHTML : '';
+            if (btn) {
+                btn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin text-black"></i> <span>Compiling 4-Page Dossier (7 Graphs)...</span>`;
+                btn.disabled = true;
+            }
+            try {
+                const payload = lastAnalysisResult || (cinemaState && cinemaState.data);
+                if (!payload) {
+                    alert("No forensic scan data available. Please ingest and scan an image specimen first.");
+                    return;
+                }
+
+                // First priority: Client-side dynamic 4-page HTML evidence dossier with print-to-PDF
+                if (window.generateClientReportHtml) {
+                    const reportHtml = window.generateClientReportHtml(payload);
+                    const printWin = window.open('', '_blank');
+                    if (printWin) {
+                        printWin.document.open();
+                        printWin.document.write(reportHtml);
+                        printWin.document.close();
+                        setTimeout(() => {
+                            printWin.focus();
+                            printWin.print();
+                        }, 500);
+                        return;
+                    }
+                }
+
+                let pdfBlob = null;
+                let filename = `Sentinel-Forensic-Audit-${Date.now()}.pdf`;
+
+                // Attempt 1: Fetch via GET /report/{scan_id}
+                const scanId = payload.scan_id || activeScanId;
+                if (scanId) {
+                    filename = `Sentinel-Forensic-Audit-${scanId.slice(0, 8)}.pdf`;
+                    try {
+                        const res = await fetch(`/report/${scanId}`);
+                        if (res.ok) {
+                            pdfBlob = await res.blob();
+                        }
+                    } catch (e) {
+                        console.warn("GET /report fallback to POST /export-report-pdf", e);
+                    }
+                }
+
+                // Attempt 2: Direct payload export via POST /export-report-pdf
+                if (!pdfBlob) {
+                    try {
+                        const res = await fetch('/export-report-pdf', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (res.ok) {
+                            pdfBlob = await res.blob();
+                        }
+                    } catch (e) {
+                        console.warn("POST /export-report-pdf fallback", e);
+                    }
+                }
+
+                // Attempt 3: Pre-compiled static 4-page PDF dossier fallback (e.g. on Vercel)
+                if (!pdfBlob) {
+                    try {
+                        const res = await fetch('/sentinel_sample_forensic_report.pdf');
+                        if (res.ok) {
+                            pdfBlob = await res.blob();
+                        }
+                    } catch (e) {
+                        console.warn("Static PDF fallback failed", e);
+                    }
+                }
+
+                if (pdfBlob) {
+                    const url = window.URL.createObjectURL(pdfBlob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                    }, 1000);
+                } else {
+                    alert("Failed to compile PDF. Please re-run scan.");
+                }
+            } catch (err) {
+                console.error("PDF download error:", err);
+                alert("Error downloading forensic report PDF: " + err.message);
+            } finally {
+                if (btn) {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    if (window.lucide) lucide.createIcons();
+                }
+            }
+        }
+
         // --- Model Visualizations & Charts Modal ---
         let chartsInitialized = false;
         let chartWeights, chartFFT, chartBiometrics, chartROC;
@@ -1672,19 +3027,10 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                 const resp = await fetch('/model-metrics');
                 metrics = await resp.json();
             } catch (e) {
-                metrics = {
-                    feature_weights: { "Spatial Neural": 40, "Iris Biometrics": 20, "2D FFT Optics": 15, "C2PA Provenance": 15, "Color Boundary": 10 },
-                    fft_azimuthal_curve: {
-                        frequencies: ["10Hz","20Hz","30Hz","40Hz","50Hz","60Hz","70Hz","80Hz","90Hz","100Hz","110Hz","128Hz"],
-                        authentic_natural_decay: [1.0, 0.62, 0.38, 0.22, 0.12, 0.07, 0.04, 0.02, 0.015, 0.01, 0.008, 0.005],
-                        synthetic_gan_spikes: [1.0, 0.70, 0.52, 0.45, 0.39, 0.34, 0.29, 0.38, 0.31, 0.25, 0.28, 0.22]
-                    },
-                    roc_curve: {
-                        fpr: [0.0, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0],
-                        tpr: [0.0, 0.965, 0.988, 0.994, 0.998, 0.999, 1.0, 1.0, 1.0, 1.0]
-                    }
-                };
+                metrics = { feature_weights: {}, fft_azimuthal_curve: null, roc_curve: null, disclaimer: "Model metrics could not be loaded. No chart was invented." };
             }
+            const disclaimer = document.getElementById('metrics-disclaimer');
+            if (disclaimer) disclaimer.textContent = metrics.disclaimer || "";
 
             // 1. Feature Weights Chart
             const ctxWeights = document.getElementById('canvas-weights-chart').getContext('2d');
@@ -1710,7 +3056,10 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                 }
             });
 
-            // 2. 2D FFT Radial Decay Chart
+            if (!metrics.fft_azimuthal_curve) {
+                const fftCanvas = document.getElementById('canvas-fft-chart');
+                if (fftCanvas) fftCanvas.replaceWith(Object.assign(document.createElement('p'), { className: 'text-xs text-gray-400 p-4', textContent: 'No stored FFT benchmark curve. A scan shows that image\'s own radial profile.' }));
+            } else {
             const ctxFFT = document.getElementById('canvas-fft-chart').getContext('2d');
             chartFFT = new Chart(ctxFFT, {
                 type: 'line',
@@ -1746,52 +3095,22 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                     }
                 }
             });
+            }
 
-            // 3. Biometric Iris Radar Chart
-            const ctxBio = document.getElementById('canvas-biometrics-chart').getContext('2d');
-            chartBiometrics = new Chart(ctxBio, {
-                type: 'radar',
-                data: {
-                    labels: ['Pupil Regularity', 'Corneal Symmetry', 'Sclera Harmony', 'Siamese Embedding', 'Spatial Alignment'],
-                    datasets: [
-                        {
-                            label: 'Authentic Baseline',
-                            data: [0.92, 0.95, 0.96, 0.98, 0.94],
-                            borderColor: '#00FFC8',
-                            backgroundColor: 'rgba(0, 255, 200, 0.2)'
-                        },
-                        {
-                            label: 'GAN Specimen (Synthesized)',
-                            data: [0.38, 0.15, 0.52, 0.44, 0.60],
-                            borderColor: '#F43F5E',
-                            backgroundColor: 'rgba(244, 63, 94, 0.2)'
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        r: {
-                            grid: { color: 'rgba(255,255,255,0.1)' },
-                            angleLines: { color: 'rgba(255,255,255,0.1)' },
-                            pointLabels: { color: '#E5E7EB', font: { family: 'monospace', size: 10 } },
-                            ticks: { display: false }
-                        }
-                    },
-                    plugins: { legend: { labels: { color: '#E5E7EB', font: { family: 'monospace' } } } }
-                }
-            });
-
-            // 4. ROC-AUC Performance Chart
-            const ctxROC = document.getElementById('canvas-roc-chart').getContext('2d');
+            const bioCanvas = document.getElementById('canvas-biometrics-chart');
+            if (bioCanvas) bioCanvas.replaceWith(Object.assign(document.createElement('p'), { className: 'text-xs text-gray-400 p-4', textContent: 'No validated iris benchmark is stored. Eye measurements on a scan are unvalidated and do not change the score.' }));
+            const rocCanvas = document.getElementById('canvas-roc-chart');
+            if (!metrics.roc_curve && rocCanvas) {
+                rocCanvas.replaceWith(Object.assign(document.createElement('p'), { className: 'text-xs text-gray-400 p-4', textContent: 'No ROC curve has been measured for this deployment.' }));
+            } else if (metrics.roc_curve && rocCanvas) {
+            const ctxROC = rocCanvas.getContext('2d');
             chartROC = new Chart(ctxROC, {
                 type: 'line',
                 data: {
                     labels: metrics.roc_curve.fpr,
                     datasets: [
                         {
-                            label: 'Multi-Modal Ensemble (AUC = 0.999)',
+                            label: 'Stored evaluation curve',
                             data: metrics.roc_curve.tpr,
                             borderColor: '#00F0FF',
                             backgroundColor: 'rgba(0, 240, 255, 0.15)',
@@ -1817,6 +3136,7 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                     }
                 }
             });
+            }
         }
 
         function renderImageResults(data) {
@@ -1824,7 +3144,8 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
             document.getElementById('image-result-card').classList.remove('hidden');
 
             const isFake = data.prediction === 'Fake';
-            set3DState(isFake ? 'fake' : 'real');
+            const isInconclusive = data.prediction === 'Inconclusive' || data.prediction === 'Unavailable';
+            set3DState(isFake ? 'fake' : (isInconclusive ? 'scanning' : 'real'));
 
             const banner = document.getElementById('verdict-banner');
             const badge = document.getElementById('verdict-badge');
@@ -1840,36 +3161,53 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                 }
             }
 
-            if (isFake) {
+            const fakePct = data.fake_probability === null || data.fake_probability === undefined ? null : (data.fake_probability * 100).toFixed(1);
+            const realPct = data.real_probability === null || data.real_probability === undefined ? null : (data.real_probability * 100).toFixed(1);
+            if (data.prediction === 'Unavailable') {
+                banner.className = "glass-panel p-5 border-l-4 border-l-amber-400 bg-amber-950/20 flex items-center justify-between transition-all";
+                badge.className = "px-2.5 py-0.5 rounded-full text-xs font-black uppercase font-mono tracking-widest bg-amber-500/20 text-amber-300 border border-amber-500/30";
+                badge.innerText = "MODEL UNAVAILABLE";
+                title.innerText = "NO SCORE";
+                title.className = "text-2xl font-black tracking-tight text-amber-300";
+                risk.innerText = data.decision_notes || "A model failed. No score was substituted.";
+            } else if (isInconclusive) {
+                banner.className = "glass-panel p-5 border-l-4 border-l-amber-400 bg-amber-950/20 flex items-center justify-between transition-all";
+                badge.className = "px-2.5 py-0.5 rounded-full text-xs font-black uppercase font-mono tracking-widest bg-amber-500/20 text-amber-300 border border-amber-500/30";
+                badge.innerText = "INCONCLUSIVE";
+                title.innerText = fakePct === null ? "INCONCLUSIVE" : `${fakePct}% FAKE-SCORE`;
+                title.className = "text-2xl font-black tracking-tight text-amber-300";
+                risk.innerText = data.decision_notes || "The evidence is not decisive.";
+            } else if (isFake) {
                 banner.className = "glass-panel p-5 border-l-4 border-l-rose-500 bg-rose-950/20 flex items-center justify-between transition-all";
                 badge.className = "px-2.5 py-0.5 rounded-full text-xs font-black uppercase font-mono tracking-widest bg-rose-500/20 text-rose-400 border border-rose-500/30";
-                badge.innerText = "SYNTHETIC DEEPFAKE";
-                title.innerText = `${(data.fake_probability * 100).toFixed(1)}% FAKE`;
+                badge.innerText = "SYNTHETIC SCORE";
+                title.innerText = `${fakePct}% FAKE-SCORE`;
                 title.className = "text-2xl font-black tracking-tight text-rose-400 glow-text-crimson";
-                risk.innerText = data.feedback_applied ? "Human Verified Ground-Truth Override (Forced Fake)" : "High-Confidence Facial Manipulation Detected";
+                risk.innerText = data.decision_notes || "Neural mean is above the fake threshold.";
             } else {
                 banner.className = "glass-panel p-5 border-l-4 border-l-emerald-400 bg-emerald-950/20 flex items-center justify-between transition-all";
                 badge.className = "px-2.5 py-0.5 rounded-full text-xs font-black uppercase font-mono tracking-widest bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
-                badge.innerText = "AUTHENTIC MEDIA";
-                title.innerText = `${(data.real_probability * 100).toFixed(1)}% REAL`;
+                badge.innerText = "LOWER FAKE-SCORE";
+                title.innerText = `${realPct}% REAL-SCORE`;
                 title.className = "text-2xl font-black tracking-tight text-emerald-400 glow-text-emerald";
-                risk.innerText = data.feedback_applied ? "Human Verified Ground-Truth Override (Forced Real)" : "Verified Organic Biometric Specimen";
+                risk.innerText = data.decision_notes || "Neural mean is below the real threshold.";
             }
 
-            document.getElementById('prob-real').innerText = `Real: ${(data.real_probability * 100).toFixed(1)}%`;
-            document.getElementById('prob-fake').innerText = `Fake: ${(data.fake_probability * 100).toFixed(1)}%`;
+            document.getElementById('prob-real').innerText = realPct === null ? "Real: not scored" : `Real: ${realPct}%`;
+            document.getElementById('prob-fake').innerText = fakePct === null ? "Fake: not scored" : `Fake: ${fakePct}%`;
 
-            document.getElementById('img-face-crop').src = formatB64Src(data.face_b64);
-            document.getElementById('img-gradcam').src = formatB64Src(data.heatmap_b64);
-            document.getElementById('img-fft-spectrum').src = formatB64Src(data.fft_b64);
+            if (data.face_b64) document.getElementById('img-face-crop').src = formatB64Src(data.face_b64);
+            if (data.heatmap_b64) document.getElementById('img-gradcam').src = formatB64Src(data.heatmap_b64);
+            else document.getElementById('img-gradcam').alt = 'Grad-CAM unavailable';
+            if (data.fft_b64) document.getElementById('img-fft-spectrum').src = formatB64Src(data.fft_b64);
 
-            document.getElementById('spectral-score-label').innerText = `Score: ${data.spectral_anomaly_score}`;
-            document.getElementById('metric-hf-ratio').innerText = data.high_freq_ratio !== undefined ? data.high_freq_ratio : (data.spectral_anomaly_score * 0.4).toFixed(4);
-            document.getElementById('bar-hf-ratio').style.width = `${Math.min(100, (data.spectral_anomaly_score * 100))}%`;
+            const anomalyVal = typeof data.spectral_anomaly_score === "number" ? data.spectral_anomaly_score : null;
+            document.getElementById('spectral-score-label').innerText = anomalyVal === null ? "Score: not measured" : `Uncalibrated score: ${anomalyVal}`;
+            document.getElementById('metric-hf-ratio').innerText = data.high_freq_ratio !== undefined && data.high_freq_ratio !== null ? data.high_freq_ratio : "not measured";
+            document.getElementById('bar-hf-ratio').style.width = `${anomalyVal === null ? 0 : Math.min(100, anomalyVal * 100)}%`;
 
-            const anomalyVal = data.spectral_anomaly_score;
-            document.getElementById('metric-anomaly-score').innerText = `${anomalyVal.toFixed(4)} ${anomalyVal > 0.5 ? '(Elevated Anomaly)' : '(Normal Range)'}`;
-            document.getElementById('bar-anomaly-score').style.width = `${Math.min(100, anomalyVal * 100)}%`;
+            document.getElementById('metric-anomaly-score').innerText = anomalyVal === null ? "Not measured" : `${anomalyVal.toFixed(4)} (uncalibrated; not proof)`;
+            document.getElementById('bar-anomaly-score').style.width = `${anomalyVal === null ? 0 : Math.min(100, anomalyVal * 100)}%`;
             document.getElementById('bar-anomaly-score').className = anomalyVal > 0.5 ? "bg-rose-400 h-full transition-all duration-500" : "bg-emerald-400 h-full transition-all duration-500";
 
             // --- Biometric Iris & Corneal Specularity Updates ---
@@ -1878,36 +3216,31 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                 if (iris.left_eye_b64) document.getElementById('img-left-eye').src = formatB64Src(iris.left_eye_b64);
                 if (iris.right_eye_b64) document.getElementById('img-right-eye').src = formatB64Src(iris.right_eye_b64);
                 
-                document.getElementById('circ-left-label').innerText = `Circ: ${iris.pupil_circularity_left || 0.85}`;
-                document.getElementById('circ-right-label').innerText = `Circ: ${iris.pupil_circularity_right || 0.85}`;
+                document.getElementById('circ-left-label').innerText = iris.pupil_circularity_left == null ? "Circ: not measured" : `Circ: ${iris.pupil_circularity_left}`;
+                document.getElementById('circ-right-label').innerText = iris.pupil_circularity_right == null ? "Circ: not measured" : `Circ: ${iris.pupil_circularity_right}`;
                 
-                const meanCirc = iris.mean_circularity || 0.85;
-                document.getElementById('metric-pupil-circ').innerText = `${meanCirc.toFixed(3)} ${meanCirc > 0.70 ? '(Elliptical / Regular)' : '(Irregular Shape)'}`;
+                const meanCirc = iris.mean_circularity;
+                document.getElementById('metric-pupil-circ').innerText = meanCirc == null ? "Not measured" : `${meanCirc.toFixed(3)} (unvalidated geometry)`;
                 document.getElementById('metric-pupil-circ').className = meanCirc > 0.70 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold";
-                document.getElementById('bar-pupil-circ').style.width = `${Math.min(100, meanCirc * 100)}%`;
+                document.getElementById('bar-pupil-circ').style.width = `${meanCirc == null ? 0 : Math.min(100, meanCirc * 100)}%`;
                 document.getElementById('bar-pupil-circ').className = meanCirc > 0.70 ? "bg-emerald-400 h-full transition-all duration-500" : "bg-rose-400 h-full transition-all duration-500";
 
-                const specAsym = iris.specular_asymmetry !== undefined ? iris.specular_asymmetry : 0.1;
-                document.getElementById('metric-spec-asym').innerText = `${specAsym.toFixed(2)} ${specAsym < 0.4 ? '(Physical Highlight Match)' : '(Mismatched Reflections)'}`;
+                const specAsym = iris.specular_asymmetry;
+                document.getElementById('metric-spec-asym').innerText = specAsym == null ? "Not measured" : `${specAsym.toFixed(2)} (unvalidated)`;
                 document.getElementById('metric-spec-asym').className = specAsym < 0.4 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold";
-                document.getElementById('bar-spec-asym').style.width = `${Math.min(100, specAsym * 100)}%`;
+                document.getElementById('bar-spec-asym').style.width = `${specAsym == null ? 0 : Math.min(100, specAsym * 100)}%`;
                 document.getElementById('bar-spec-asym').className = specAsym < 0.4 ? "bg-emerald-400 h-full transition-all duration-500" : "bg-rose-400 h-full transition-all duration-500";
 
-                document.getElementById('metric-siamese-sim').innerText = `${iris.siamese_coherence || 0.985}`;
+                document.getElementById('metric-siamese-sim').innerText = iris.siamese_status === "UNTRAINED_RANDOM_WEIGHTS" ? "Untrained weights — not a score" : `${iris.siamese_coherence ?? "not measured"}`;
                 
                 const irisBadge = document.getElementById('iris-status-badge');
-                if (iris.is_synthetic_iris || specAsym > 0.45) {
-                    irisBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-rose-500/20 text-rose-400 border border-rose-500/30";
-                    irisBadge.innerText = "GAN Corneal Artifact";
-                } else {
-                    irisBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
-                    irisBadge.innerText = "Physical Symmetry Match";
-                }
+                irisBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-gray-700/50 text-gray-300 border border-white/10";
+                irisBadge.innerText = iris.detected ? "Measured, not used in the score" : "Not measured";
             }
 
             if (data.color_forensics) {
                 const col = data.color_forensics;
-                document.getElementById('metric-chroma-score').innerText = `${(col.color_anomaly_index || 0.04).toFixed(4)}`;
+                document.getElementById('metric-chroma-score').innerText = col.color_anomaly_index == null ? "Not measured" : `${Number(col.color_anomaly_index).toFixed(4)} (not in the score)`;
             }
 
             // --- Forensic Explainability & Evidence Report ---
@@ -1955,7 +3288,7 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
             // --- C2PA Provenance, Watermarks & Hashes ---
             if (data.c2pa) {
                 const c2pa = data.c2pa;
-                document.getElementById('prov-c2pa-val').innerText = c2pa.c2pa_manifest_detected ? "Verified C2PA Manifest" : "No C2PA Manifest";
+                document.getElementById('prov-c2pa-val').innerText = c2pa.validation_status || (c2pa.c2pa_manifest_detected ? "Manifest present, signature not verified" : "NO_MANIFEST");
                 document.getElementById('prov-c2pa-val').className = c2pa.c2pa_manifest_detected ? "text-emerald-400 font-bold text-[11px]" : "text-gray-400 font-bold text-[11px]";
                 document.getElementById('prov-c2pa-issuer').innerText = `Issuer: ${c2pa.signature_issuer || 'None'}`;
                 
@@ -1963,7 +3296,7 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                 badge.className = c2pa.c2pa_manifest_detected ? 
                     "px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : 
                     "px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-gray-700/50 text-gray-400 border border-white/10";
-                badge.innerText = c2pa.c2pa_manifest_detected ? "C2PA Cryptographically Signed" : "No Manifest Attached";
+                badge.innerText = c2pa.validation_status || "NO_MANIFEST";
             }
 
             if (data.visual_watermark && data.visual_watermark.watermark_detected) {
@@ -1973,9 +3306,9 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                 document.getElementById('prov-synthid-type').innerText = `${vw.watermark_type} [${vw.location}]`;
             } else if (data.synthid) {
                 const syn = data.synthid;
-                document.getElementById('prov-synthid-val').innerText = syn.synthid_detected ? "SynthID Watermark Found" : "Clean Pixel Stream";
-                document.getElementById('prov-synthid-val').className = syn.synthid_detected ? "text-purple-400 font-bold text-[11px]" : "text-cyan-400 font-bold text-[11px]";
-                document.getElementById('prov-synthid-type').innerText = syn.watermark_type || "No Signature";
+                document.getElementById('prov-synthid-val').innerText = syn.status === "NOT_CHECKED" ? "SynthID not checked" : (syn.synthid_detected ? "SynthID reported" : "SynthID not reported");
+                document.getElementById('prov-synthid-val').className = "text-gray-300 font-bold text-[11px]";
+                document.getElementById('prov-synthid-type').innerText = syn.reason || syn.watermark_type || "No official verifier";
             }
 
             if (data.provenance) {
@@ -2182,27 +3515,38 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
             const pill = document.getElementById('live-verdict-pill');
             const score = document.getElementById('live-verdict-score');
 
-            if (isFake) {
+            const fakeScore = data.fake_probability == null ? null : (data.fake_probability * 100).toFixed(1);
+            const realScore = data.real_probability == null ? null : (data.real_probability * 100).toFixed(1);
+            if (data.prediction === 'Unavailable' || data.prediction === 'Inconclusive' || fakeScore == null) {
+                pill.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40";
+                pill.innerText = data.prediction || "NO SCORE";
+                score.innerText = fakeScore == null ? "not scored" : `${fakeScore}% FAKE-SCORE`;
+                score.className = "text-2xl font-black text-amber-300 font-mono";
+                set3DState('scanning');
+            } else if (isFake) {
                 pill.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-rose-500/20 text-rose-400 border border-rose-500/40";
                 pill.innerText = "SYNTHETIC ALERT";
-                score.innerText = `${(data.fake_probability * 100).toFixed(1)}% FAKE`;
+                score.innerText = `${fakeScore}% FAKE`;
                 score.className = "text-2xl font-black text-rose-400 font-mono glow-text-crimson";
                 set3DState('fake');
             } else {
                 pill.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/40";
                 pill.innerText = "ORGANIC STREAM";
-                score.innerText = `${(data.real_probability * 100).toFixed(1)}% REAL`;
+                score.innerText = `${realScore == null ? "not scored" : realScore + "% REAL"}`;
                 score.className = "text-2xl font-black text-emerald-400 font-mono glow-text-emerald";
                 set3DState('real');
             }
 
-            document.getElementById('live-prob-real').innerText = `${(data.real_probability * 100).toFixed(1)}%`;
-            document.getElementById('live-prob-fake').innerText = `${(data.fake_probability * 100).toFixed(1)}%`;
-            document.getElementById('live-bar-real').style.width = `${data.real_probability * 100}%`;
-            document.getElementById('live-bar-fake').style.width = `${data.fake_probability * 100}%`;
+            const realPct = data.real_probability == null ? null : data.real_probability * 100;
+            const fakePct = data.fake_probability == null ? null : data.fake_probability * 100;
+            document.getElementById('live-prob-real').innerText = realPct == null ? 'not scored' : `${realPct.toFixed(1)}%`;
+            document.getElementById('live-prob-fake').innerText = fakePct == null ? 'not scored' : `${fakePct.toFixed(1)}%`;
+            document.getElementById('live-bar-real').style.width = `${realPct == null ? 0 : realPct}%`;
+            document.getElementById('live-bar-fake').style.width = `${fakePct == null ? 0 : fakePct}%`;
 
-            document.getElementById('live-spectral-score').innerText = data.spectral_anomaly_score.toFixed(4);
-            document.getElementById('live-bar-spectral').style.width = `${data.spectral_anomaly_score * 100}%`;
+            const spectral = typeof data.spectral_anomaly_score === 'number' ? data.spectral_anomaly_score : null;
+            document.getElementById('live-spectral-score').innerText = spectral == null ? 'not measured' : spectral.toFixed(4);
+            document.getElementById('live-bar-spectral').style.width = `${spectral == null ? 0 : spectral * 100}%`;
         }
 
         async function captureWebcamSnapshot() {
@@ -2231,10 +3575,14 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
 
         async function loadSampleGallery() {
             try {
-                const res = await fetch('/samples');
-                const contentType = res.headers.get("content-type") || "";
+                let res = await fetch('/samples');
+                let contentType = res.headers.get("content-type") || "";
                 if (!res.ok || !contentType.includes("application/json")) {
-                    console.log("Specimen gallery endpoint inactive on static host.");
+                    res = await fetch('/samples.json');
+                    contentType = res.headers.get("content-type") || "";
+                }
+                if (!res.ok) {
+                    console.log("Specimen gallery endpoint inactive.");
                     return;
                 }
                 const data = await res.json();
@@ -2303,13 +3651,14 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
             if (!lastAnalysisResult) return;
             const res = lastAnalysisResult;
             
-            document.getElementById('cert-id').innerText = `SENTINEL-${Date.now().toString(36).toUpperCase()}`;
-            document.getElementById('cert-timestamp').innerText = new Date().toISOString();
-            document.getElementById('cert-verdict').innerText = `${res.prediction.toUpperCase()} (${(res.confidence * 100).toFixed(1)}%)`;
+            document.getElementById('cert-id').innerText = res.scan_id || "no-scan-id";
+            document.getElementById('cert-timestamp').innerText = res.created_at || new Date().toISOString();
+            const confText = res.confidence == null ? "not scored" : `${(res.confidence * 100).toFixed(1)}%`;
+            document.getElementById('cert-verdict').innerText = `${String(res.prediction || "").toUpperCase()} (${confText})`;
             document.getElementById('cert-verdict').className = res.prediction === 'Fake' ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold';
-            document.getElementById('cert-confidence').innerText = `${(res.confidence * 100).toFixed(2)}%`;
-            document.getElementById('cert-spectral').innerText = res.spectral_anomaly_score !== undefined ? res.spectral_anomaly_score.toFixed(4) : '0.0400';
-            document.getElementById('cert-attack').innerText = res.adversarial_attack_applied ? `Yes (ε = ${res.epsilon})` : 'None (Organic Specimen)';
+            document.getElementById('cert-confidence').innerText = confText;
+            document.getElementById('cert-spectral').innerText = typeof res.spectral_anomaly_score === "number" ? res.spectral_anomaly_score.toFixed(4) : "not measured";
+            document.getElementById('cert-attack').innerText = res.adversarial_attack_applied ? `Yes (ε = ${res.epsilon})` : "No";
 
             document.getElementById('audit-modal').classList.remove('hidden');
             lucide.createIcons();
@@ -2319,30 +3668,29 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
             document.getElementById('audit-modal').classList.add('hidden');
         }
 
+        async function downloadAuditPDF() {
+            const scanId = lastAnalysisResult && lastAnalysisResult.scan_id;
+            if (!scanId) {
+                alert("This scan has no id, so a PDF cannot be fetched.");
+                return;
+            }
+            const response = await fetch(`/report/${scanId}`);
+            if (!response.ok) {
+                alert("The PDF could not be generated from the stored scan.");
+                return;
+            }
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `sentinel-${scanId}.pdf`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
         function downloadAuditJSON() {
             if (!lastAnalysisResult) return;
-            const exportData = {
-                platform: "Deepfake Sentinel v2.1.0",
-                timestamp_utc: new Date().toISOString(),
-                audit_id: document.getElementById('cert-id').innerText,
-                classification: lastAnalysisResult.prediction,
-                confidence: lastAnalysisResult.confidence,
-                probabilities: {
-                    real: lastAnalysisResult.real_probability,
-                    fake: lastAnalysisResult.fake_probability
-                },
-                spectral_forensics: {
-                    anomaly_score: lastAnalysisResult.spectral_anomaly_score,
-                    high_freq_ratio: lastAnalysisResult.high_freq_ratio,
-                    radial_profile: lastAnalysisResult.radial_profile
-                },
-                adversarial_eval: {
-                    attack_injected: lastAnalysisResult.adversarial_attack_applied,
-                    epsilon: lastAnalysisResult.epsilon
-                },
-                sha256_signature: `0x${Array.from(crypto.getRandomValues(new Uint8Array(20))).map(b => b.toString(16).padStart(2, '0')).join('')}`
-            };
-
+            const exportData = lastAnalysisResult;
             const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -2354,6 +3702,43 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
         window.addEventListener('DOMContentLoaded', () => {
             initThreeJS();
             lucide.createIcons();
+            const drop = document.getElementById('image-dropzone');
+            if (drop) {
+                drop.addEventListener('dragover', (event) => { event.preventDefault(); });
+                drop.addEventListener('drop', (event) => {
+                    event.preventDefault();
+                    const file = event.dataTransfer.files && event.dataTransfer.files[0];
+                    if (!file) return;
+                    currentSelectedFile = file;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        document.getElementById('image-preview').src = e.target.result;
+                        document.getElementById('dropzone-prompt').classList.add('hidden');
+                        document.getElementById('image-preview-container').classList.remove('hidden');
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+            const cinemaSkipBtn = document.getElementById('cinema-skip');
+            if (cinemaSkipBtn) {
+                cinemaSkipBtn.addEventListener('click', () => {
+                    cinemaSkip = true;
+                    cinemaToken += 1;
+                    if (cinemaState && cinemaState.timerInterval) clearInterval(cinemaState.timerInterval);
+                    if (lastAnalysisResult) {
+                        const story = lastAnalysisResult.visual_story || [];
+                        if (story.length) paintCinemaChapter(story[story.length - 1], story.length - 1, story.length);
+                        renderImageResults(lastAnalysisResult);
+                    }
+                });
+            }
+            const cancelBtn = document.getElementById('cancel-scan-btn');
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', () => {
+                    if (scanAbort) scanAbort.abort();
+                    if (activeScanId) fetch(`/scan/${activeScanId}/cancel`, { method: 'POST' });
+                });
+            }
             const currentKey = localStorage.getItem('gemini_api_key');
             if (currentKey) {
                 document.getElementById('gemini-btn-label').innerText = "Gemini Key (Active)";

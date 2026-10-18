@@ -1,0 +1,9 @@
+backend/weights/
+dataset/
+.pytest_cache/
+node_modules/
+tests/
+test-results/
+.env
+.env.local
+.git/

@@ -57,7 +57,7 @@ def process_video_file(
             timestamp_sec = item['timestamp_sec']
             
             # 1. Dual-backbone spatial inference
-            eff_fake_prob, vit_fake_prob = ensemble_model.predict_backbones(face_img, use_tta=True)
+            eff_fake_prob, vit_fake_prob, _model_detail = ensemble_model.predict_backbones(face_img, use_tta=False)
             
             # 2. Spectral 2D Fourier Analysis
             spectral_data = calculate_spectral_analysis(face_np)
@@ -76,6 +76,14 @@ def process_video_file(
             )
             fused_fake = frame_fusion['fake_probability']
             fused_real = frame_fusion['real_probability']
+            if fused_fake is None or fused_real is None:
+                frame_results.append({
+                    'frame_idx': frame_idx,
+                    'timestamp_sec': timestamp_sec,
+                    'prediction': 'Unavailable',
+                    'error': 'No neural score for this frame.',
+                })
+                continue
             frame_pred = frame_fusion['prediction']
             frame_conf = frame_fusion['confidence']
             
@@ -84,7 +92,7 @@ def process_video_file(
             try:
                 heatmap = generate_heatmap(ensemble_model, input_tensor, face_np)
             except Exception:
-                heatmap = face_np
+                heatmap = None
             
             face_resized = cv2.resize(face_np, (224, 224))
             
@@ -96,10 +104,10 @@ def process_video_file(
                 'fake_probability': fused_fake,
                 'real_probability': fused_real,
                 'spectral_anomaly_score': spectral_data['anomaly_score'],
-                'iris_anomaly_score': float(iris_data.get('iris_anomaly_score', 0.25)),
+                'iris_anomaly_score': iris_data.get('iris_anomaly_score'),
                 'face_detected': item.get('detected', True),
                 'face_b64': np_to_b64(face_resized),
-                'heatmap_b64': np_to_b64(heatmap),
+                'heatmap_b64': np_to_b64(heatmap) if heatmap is not None else None,
                 'fft_b64': np_to_b64(fft_spectrum)
             }
             
@@ -109,27 +117,42 @@ def process_video_file(
             spectral_scores.append(spectral_data['anomaly_score'])
 
         # Temporal Aggregation and Variance Metrics
+        if not fake_probs:
+            raise ValueError("Video frames were decoded, but no neural model produced a score.")
         mean_fake_prob = float(np.mean(fake_probs))
         mean_real_prob = float(np.mean(real_probs))
         max_fake_spike = float(np.max(fake_probs))
         temporal_variance = float(np.var(fake_probs))
         mean_spectral_score = float(np.mean(spectral_scores))
 
-        # Calibrated overall prediction using ForensicDecisionEngine boundaries
-        if mean_fake_prob >= ForensicDecisionEngine.CONFIDENT_FAKE_THRESHOLD or (max_fake_spike > 0.85 and temporal_variance > 0.04):
+        # Mean of per-frame neural scores. Frame-to-frame variation is reported, not treated as proof.
+        cap_meta = {}
+        try:
+            cap_meta_probe = cv2.VideoCapture(tmp_path)
+            cap_meta = {
+                "fps": float(cap_meta_probe.get(cv2.CAP_PROP_FPS) or 0),
+                "frame_count": int(cap_meta_probe.get(cv2.CAP_PROP_FRAME_COUNT) or 0),
+                "width": int(cap_meta_probe.get(cv2.CAP_PROP_FRAME_WIDTH) or 0),
+                "height": int(cap_meta_probe.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0),
+            }
+            cap_meta_probe.release()
+        except Exception:
+            cap_meta = {}
+
+        if mean_fake_prob >= ForensicDecisionEngine.CONFIDENT_FAKE_THRESHOLD:
             overall_prediction = 'Fake'
             overall_confidence = mean_fake_prob
-            verdict_badge = "SYNTHETIC (AI-GENERATED VIDEO)"
+            verdict_badge = "SYNTHETIC (MEAN OF FRAME SCORES)"
             is_inconclusive = False
         elif mean_fake_prob <= ForensicDecisionEngine.CONFIDENT_REAL_THRESHOLD:
             overall_prediction = 'Real'
             overall_confidence = mean_real_prob
-            verdict_badge = "AUTHENTIC (REAL VIDEO)"
+            verdict_badge = "LOWER MEAN FRAME SCORE"
             is_inconclusive = False
         else:
             overall_prediction = 'Inconclusive'
             overall_confidence = float(max(mean_real_prob, mean_fake_prob))
-            verdict_badge = "BORDERLINE / INCONCLUSIVE VIDEO"
+            verdict_badge = "INCONCLUSIVE VIDEO"
             is_inconclusive = True
 
         # Select primary representative diagnostic frame
@@ -147,7 +170,18 @@ def process_video_file(
             'fake_probability': round(mean_fake_prob, 4),
             'spectral_anomaly_score': round(mean_spectral_score, 4),
             'temporal_variance': round(temporal_variance, 4),
-            'frames_analyzed': len(frame_results),
+            'frames_analyzed': len(fake_probs),
+            'frames_decoded': len(sampled_data),
+            'aggregation': {
+                'method': 'unweighted_mean_of_per_frame_neural_scores',
+                'temporal_model': None,
+                'temporal_variance': round(temporal_variance, 4),
+                'max_frame_fake_score': round(max_fake_spike, 4),
+                'video': cap_meta,
+                'limitation': 'Prediction changes between frames are not proof of manipulation. No temporal neural network is used.',
+            },
+            'verdict_badge': verdict_badge,
+            'is_inconclusive': is_inconclusive,
             'adversarial_attack_applied': attack,
             'epsilon': epsilon,
             'face_b64': primary_frame['face_b64'],

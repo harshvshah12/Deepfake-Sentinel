@@ -26,57 +26,49 @@ def generate_forensic_explanation(payload: Dict[str, Any], gemini_key: Optional[
     findings = []
     
     # --- 1. Provenance, C2PA & EXIF Metadata ---
-    if c2pa.get("c2pa_manifest_detected"):
-        findings.append(f"C2PA Provenance Manifest: Validated cryptographic manifest issued by {c2pa.get('signature_issuer')}.")
-    elif prov.get("ai_software_detected"):
-        findings.append(f"EXIF Metadata Signature: File metadata contains explicit generative software stamp ({prov.get('ai_software_name')}).")
+    c2pa_status = c2pa.get("validation_status", "NO_MANIFEST")
+    findings.append(f"C2PA: {c2pa_status}. This is not a signature verification, and it does not change the neural score.")
+    if prov.get("ai_software_detected"):
+        findings.append(f"EXIF names generator software ({prov.get('ai_software_name')}). Metadata can be edited separately from the pixels.")
     elif prov.get("camera_hardware_found"):
-        findings.append(f"Camera Hardware Profile: Verified physical sensor profile ({prov.get('make')} {prov.get('model')}).")
+        findings.append(f"EXIF includes camera tags ({prov.get('make')} {prov.get('model')}). Camera tags do not prove the pixels are unedited.")
     else:
-        findings.append("Metadata Hygiene: EXIF camera profile absent, indicative of web re-encoding or synthetic export.")
+        findings.append("EXIF camera tags were not found. Missing metadata does not mean the image is synthetic.")
 
-    # --- 2. SynthID & Digital Watermark ---
-    if synthid.get("synthid_detected"):
-        findings.append(f"SynthID Watermark: Imperceptible pixel watermark pattern identified with {synthid.get('watermark_confidence')*100:.1f}% confidence.")
-    else:
-        findings.append("Watermark Integrity: No imperceptible SynthID frequency modulation pattern detected.")
+    if synthid.get("status") == "NOT_CHECKED" or synthid.get("synthid_detected") is None:
+        findings.append("SynthID: NOT CHECKED. No official verifier is configured, and frequency energy was not used as a substitute.")
+    elif synthid.get("synthid_detected"):
+        findings.append("SynthID: a verifier reported a watermark. See the provenance block for the raw status.")
 
     # --- 3. Biometric Iris & Physical Highlights (Hu et al. ICASSP) ---
-    if iris.get("detected"):
-        asym = iris.get("specular_asymmetry", 0.0)
-        circ_l = iris.get("pupil_circularity_left", 0.85)
-        circ_r = iris.get("pupil_circularity_right", 0.85)
-        
-        if asym > 0.40:
-            findings.append(f"Corneal Specular Asymmetry: Divergence between left and right iris specular glints is {asym*100:.1f}%, violating physical bilateral illumination constraints.")
-        else:
-            findings.append(f"Corneal Specular Symmetry: Specular reflections in both eyes share consistent light source vectors (Asymmetry: {asym*100:.1f}%).")
-            
-        if min(circ_l, circ_r) < 0.35:
-            findings.append(f"Pupil Boundary Regularity: Pupil circularity regularity is {min(circ_l, circ_r):.2f}, exhibiting non-elliptical generative boundary distortion.")
-        else:
-            findings.append(f"Pupil Ellipticity: Both pupils maintain natural elliptical circularity (Mean: {iris.get('mean_circularity', 0.85):.2f}).")
+    if iris.get("detected") and iris.get("specular_asymmetry") is not None:
+        asym = float(iris.get("specular_asymmetry"))
+        findings.append(
+            f"Eye geometry was measured (specular area asymmetry {asym:.3f}). "
+            "This is unvalidated and is not a medical or authenticity conclusion."
+        )
+    else:
+        findings.append("Eye geometry: NOT MEASURED.")
 
     # --- 4. 2D FFT Frequency Optics (Dzanic et al. NeurIPS) ---
-    if spec > 0.45:
-        findings.append(f"2D Fourier Optics: Frequency power spectrum exhibits periodic high-frequency harmonics (Score: {spec:.4f}), typical of transposed convolution upsampling.")
-    else:
-        findings.append(f"2D Fourier Optics: Natural radial spectral energy decay observed without generative checkerboard frequency spikes (Score: {spec:.4f}).")
+    findings.append(
+        f"FFT high-frequency score {float(spec):.4f} is an uncalibrated measurement. "
+        "It is not treated as proof of a GAN checkerboard."
+    )
 
-    # --- 5. Spatial CNN & Transformer Ensemble ---
-    raw_spatial = payload.get("raw_spatial_fake_prob", fake_p)
-    if is_fake:
-        findings.append(f"Spatial Neural Classification: Dual-backbone ensemble (EfficientNet-B3 399k + ViT-B/16) identified synthetic micro-textures with {raw_spatial*100:.1f}% confidence.")
-        summary = (
-            f"This specimen is verified as SYNTHETIC (AI-Generated) with {fake_p*100:.1f}% confidence. "
-            f"The classification is corroborated by spatial neural feature activations, corneal reflection asymmetries, and frequency-domain generative harmonics."
-        )
+    notes = payload.get("decision_notes") or ""
+    if pred == "Unavailable":
+        summary = "No neural model produced a score. Nothing was substituted."
+        findings.append(summary)
+    elif pred == "Inconclusive":
+        summary = f"Inconclusive. {notes}"
+        findings.append(summary)
+    elif is_fake:
+        summary = f"Neural mean fake-score {float(fake_p):.3f}. {notes}"
+        findings.append(summary)
     else:
-        findings.append(f"Spatial Neural Classification: Dual-backbone ensemble verified organic skin pore textures and facial symmetry with {real_p*100:.1f}% confidence.")
-        summary = (
-            f"This specimen is verified as AUTHENTIC (Organic / Real) with {real_p*100:.1f}% confidence. "
-            f"The image exhibits natural optical sensor noise, consistent 3D physical illumination, and authentic biometric anatomy."
-        )
+        summary = f"Neural mean fake-score {float(fake_p):.3f}, labeled Real by the decision thresholds. {notes}"
+        findings.append(summary)
 
     # --- 6. Optional Gemini API Reasoning ---
     active_key = (gemini_key or "").strip() or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
@@ -103,10 +95,10 @@ def generate_forensic_explanation(payload: Dict[str, Any], gemini_key: Optional[
                         verdict_token = after_colon.replace("*", "").replace(".", "").strip().upper()
                         if verdict_token.startswith("REAL") or verdict_token.startswith("AUTHENTIC") or verdict_token.startswith("GENUINE"):
                             gemini_verdict = "Real"
-                            gemini_fake_score = 0.04
+                            gemini_fake_score = None
                         elif verdict_token.startswith("FAKE") or verdict_token.startswith("SYNTHETIC") or verdict_token.startswith("AI") or verdict_token.startswith("MANIPULATED"):
                             gemini_verdict = "Fake"
-                            gemini_fake_score = 0.98
+                            gemini_fake_score = None
                     elif line_l.startswith("primary anomaly region:") or line_l.startswith("anomaly region:"):
                         anomaly_localization["primary_region"] = line_s.split(":", 1)[1].strip()
                     elif line_l.startswith("anomaly explanation:"):
@@ -143,13 +135,7 @@ def call_gemini_forensic_reasoner(payload: Dict[str, Any], api_key: str) -> Opti
     suspect region/coordinates responsible for the verdict.
     """
     cleaned_key = api_key.strip().replace('"', '').replace("'", "")
-    models = [
-        "gemini-3.1-flash-lite",
-        "gemini-2.5-flash",
-        "gemini-3.5-flash",
-        "gemini-3.7-flash",
-        "gemini-flash-latest"
-    ]
+    models = ["gemini-2.5-flash"]
     
     parts = []
     
@@ -193,35 +179,31 @@ def call_gemini_forensic_reasoner(payload: Dict[str, Any], api_key: str) -> Opti
     
     last_error = ""
     for model_name in models:
-        urls = [
-            f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={cleaned_key}",
-            f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-        ]
-        for target_url in urls:
-            req = urllib.request.Request(
-                target_url,
-                data=data_bytes,
-                headers={
-                    "Content-Type": "application/json",
-                    "x-goog-api-key": cleaned_key
-                }
-            )
+        target_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={cleaned_key}"
+        req = urllib.request.Request(
+            target_url,
+            data=data_bytes,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": cleaned_key
+            }
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=8.0) as resp:
+                res_data = json.loads(resp.read().decode("utf-8"))
+                candidates = res_data.get("candidates", [])
+                if candidates and "content" in candidates[0]:
+                    c_parts = candidates[0]["content"].get("parts", [])
+                    if c_parts:
+                        return c_parts[0].get("text", "").strip()
+        except urllib.error.HTTPError as e:
+            err_text = e.read().decode("utf-8", errors="ignore")
             try:
-                with urllib.request.urlopen(req, timeout=12.0) as resp:
-                    res_data = json.loads(resp.read().decode("utf-8"))
-                    candidates = res_data.get("candidates", [])
-                    if candidates and "content" in candidates[0]:
-                        c_parts = candidates[0]["content"].get("parts", [])
-                        if c_parts:
-                            return c_parts[0].get("text", "").strip()
-            except urllib.error.HTTPError as e:
-                err_text = e.read().decode("utf-8", errors="ignore")
-                try:
-                    err_json = json.loads(err_text)
-                    last_error = err_json.get("error", {}).get("message", err_text[:120])
-                except Exception:
-                    last_error = f"HTTP {e.code}: {e.reason}"
-            except Exception as e:
-                last_error = str(e)
+                err_json = json.loads(err_text)
+                last_error = err_json.get("error", {}).get("message", err_text[:120])
+            except Exception:
+                last_error = f"HTTP {e.code}: {e.reason}"
+        except Exception as e:
+            last_error = str(e)
                 
     return f"Gemini Analysis Unavailable ({last_error})"

@@ -42,18 +42,13 @@ def generate_heatmap(model, input_tensor, image_np):
                 input_tensor = input_tensor.unsqueeze(0)
             grayscale_cam = cam(input_tensor=input_tensor, targets=None)[0, :]
         else:
-            return image_np
-            
+            return None
+
         img = np.float32(image_np) / 255.0
         img = cv2.resize(img, (256, 256))
         grayscale_cam = cv2.resize(grayscale_cam, (256, 256))
         grayscale_cam = np.clip(grayscale_cam, 0, 1)
         visualization = show_cam_on_image(img, grayscale_cam, use_rgb=True)
         return visualization
-    except Exception as e:
-        # Fallback to normalized heat map
-        h, w = image_np.shape[:2]
-        canvas = np.zeros((h, w, 3), dtype=np.uint8)
-        cv2.circle(canvas, (w // 2, h // 2), min(h, w) // 3, (0, 0, 255), -1)
-        canvas = cv2.GaussianBlur(canvas, (51, 51), 0)
-        return cv2.addWeighted(image_np, 0.6, canvas, 0.4, 0)
+    except Exception:
+        return None

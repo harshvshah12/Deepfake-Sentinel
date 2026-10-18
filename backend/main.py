@@ -1,17 +1,20 @@
+import asyncio
 import io
 import os
+import json
+import time
 import base64
 import glob
+import threading
 from pathlib import Path
 from typing import Optional, Dict, Any
 import cv2
 import numpy as np
 import torch
-import torch.nn.functional as F
 from PIL import Image
 from pydantic import BaseModel
-from fastapi import FastAPI, File, UploadFile, Query, Body, HTTPException
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import FastAPI, File, UploadFile, Query, Body, HTTPException, Request
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse, Response, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -33,6 +36,11 @@ from backend.provenance import (
 from backend.explainability import generate_forensic_explanation, call_gemini_forensic_reasoner
 from backend.feedback_memory import save_user_feedback, lookup_feedback_memory, get_feedback_stats
 from backend.fusion import ForensicDecisionEngine
+from backend.pipeline import analyze_image, ScanCancelled
+from backend.scan_store import save_scan, get_scan, cancel_scan
+from backend.security import UploadRejected, classify_upload, resolve_dataset_file, SlidingRateLimiter
+from backend.pdf_report import generate_scan_pdf
+from backend.pdf_html_generator import generate_report_html
 
 # Auto-load .env if present
 _env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -66,6 +74,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 extractor = FaceExtractor(device=device)
 ensemble = EnsembleModel(device=device)
 iris_engine = IrisBiometricEngine(device=device)
+rate_limiter = SlidingRateLimiter(limit=30, window_seconds=60.0)
+DATASET_ROOT = Path("dataset")
+TEST_ROOT = Path("test_images")
 
 class FramePayload(BaseModel):
     image: str
@@ -92,14 +103,21 @@ def health():
         "status": "online",
         "device": str(device),
         "cuda_available": torch.cuda.is_available(),
-        "model": "ViT-B/16 + MTCNN + 2D FFT",
-        "version": "3.1.0"
+        "model": "EfficientNet-B3 + ViT-B/16",
+        "efficientnet_loaded": bool(ensemble.eff_status.get("available")),
+        "vit_loaded": bool(ensemble.vit_status.get("available")),
+        "version": "3.3.0"
     }
 
 @app.get("/samples")
 def get_samples():
-    real_images = sorted(glob.glob("dataset/real/*.jpg") + glob.glob("dataset/real/*.png"))[:8]
-    fake_images = sorted(glob.glob("dataset/fake/*.jpg") + glob.glob("dataset/fake/*.png"))[:8]
+    real_tests = sorted(glob.glob("test_images/real/*.*"))[:6]
+    fake_tests = sorted(glob.glob("test_images/fake/*.*"))[:6]
+    real_train = sorted(glob.glob("dataset/real/*.jpg") + glob.glob("dataset/real/*.png"))[:4]
+    fake_train = sorted(glob.glob("dataset/fake/*.jpg") + glob.glob("dataset/fake/*.png"))[:4]
+    
+    real_images = real_tests + real_train
+    fake_images = fake_tests + fake_train
     
     return {
         "real": [{"id": f"real_{i}", "name": Path(p).name, "url": f"/sample-image?path={p}"} for i, p in enumerate(real_images)],
@@ -108,10 +126,11 @@ def get_samples():
 
 @app.get("/sample-image")
 def get_sample_image(path: str = Query(...)):
-    p = Path(path)
-    if not p.exists():
-        raise HTTPException(status_code=404, detail="Sample image not found")
-    return FileResponse(p)
+    try:
+        sample = resolve_dataset_file(path, DATASET_ROOT, extra_roots=[TEST_ROOT])
+    except UploadRejected as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    return FileResponse(sample)
 
 @app.post("/feedback")
 def submit_feedback(payload: FeedbackPayload):
@@ -164,58 +183,64 @@ def get_model_metrics():
     """
     Returns comprehensive data visualization metrics and verified performance benchmarks for all models.
     """
+    local_path = Path("docs/local_evaluation.json")
+    local_eval = None
+    if local_path.exists():
+        try:
+            local_eval = json.loads(local_path.read_text(encoding="utf-8"))
+        except Exception:
+            local_eval = {"status": "UNREADABLE"}
+    checkpoint_test = (ensemble.eff_checkpoint_meta or {}).get("final_test_metrics")
     return {
+        "disclaimer": (
+            "EfficientNet figures below were stored inside the training checkpoint. "
+            "They are not a new measurement of this repository's dataset folder. "
+            "No ROC curve is invented when a local evaluation file is absent. "
+            "FFT, color, and iris measurements are not accuracy claims."
+        ),
         "models": [
-            {"name": "EfficientNet-B3 (399k)", "type": "Spatial CNN", "accuracy": 92.4, "params": "12.2M", "auc": 0.958, "latency": "38ms", "status": "Production Calibrated"},
-            {"name": "Vision Transformer (ViT-B/16)", "type": "Self-Attention Transformer", "accuracy": 94.1, "params": "86.6M", "auc": 0.967, "latency": "85ms", "status": "Production Calibrated"},
-            {"name": "2D FFT Spectral Optics", "type": "Physics Domain Fourier", "accuracy": 88.5, "params": "Heuristic Deterministic", "auc": 0.912, "latency": "8ms", "status": "Physical Signal"},
-            {"name": "Bilateral Corneal Physics", "type": "Geometric Biometric Optics", "accuracy": 85.0, "params": "Geometric Deterministic", "auc": 0.880, "latency": "12ms", "status": "Physical Signal"},
-            {"name": "Siamese Iris Embedding", "type": "Deep Metric Learning", "accuracy": "N/A", "params": "2.4M", "auc": "N/A", "latency": "14ms", "status": "Experimental Prototype (Telemetry Only)"},
-            {"name": "Calibrated Forensic Fusion", "type": "Multi-Modal Bayesian Engine", "accuracy": 91.2, "params": "Adaptive Bayesian", "auc": 0.964, "latency": "140ms", "status": "Certified Engine"}
+            {
+                "name": "EfficientNet-B3",
+                "loaded": bool(ensemble.eff_status.get("available")),
+                "checkpoint_test_metrics": checkpoint_test,
+                "metrics_source": "checkpoint_embedded_training_run" if checkpoint_test else "NOT_AVAILABLE",
+            },
+            {
+                "name": "ViT-B/16 dima806/deepfake_vs_real_image_detection",
+                "loaded": bool(ensemble.vit_status.get("available")),
+                "id2label": ensemble.vit_id2label,
+                "local_accuracy": None,
+                "metrics_source": "NOT_MEASURED_IN_THIS_DEPLOYMENT",
+            },
         ],
-        "feature_weights": {
-            "EfficientNet-B3 Face Backbone": 45,
-            "ViT-B/16 Self-Attention Backbone": 35,
-            "2D FFT Frequency Optics": 10,
-            "Corneal & Pupil Physics": 6,
-            "Color & Boundary Seam Discontinuity": 4
-        },
-        "fft_azimuthal_curve": {
-            "frequencies": ["10Hz", "20Hz", "30Hz", "40Hz", "50Hz", "60Hz", "70Hz", "80Hz", "90Hz", "100Hz", "110Hz", "128Hz"],
-            "authentic_natural_decay": [1.00, 0.62, 0.38, 0.22, 0.12, 0.07, 0.04, 0.02, 0.015, 0.010, 0.008, 0.005],
-            "synthetic_gan_spikes": [1.00, 0.70, 0.52, 0.45, 0.39, 0.34, 0.29, 0.38, 0.31, 0.25, 0.28, 0.22]
-        },
-        "confusion_matrix": {
-            "true_real": 912,
-            "false_fake": 88,
-            "false_real": 64,
-            "true_fake": 936
-        },
-        "roc_curve": {
-            "fpr": [0.0, 0.01, 0.02, 0.05, 0.08, 0.12, 0.20, 0.40, 0.70, 1.0],
-            "tpr": [0.0, 0.82, 0.88, 0.93, 0.95, 0.97, 0.99, 1.0, 1.0, 1.0]
-        }
+        "feature_weights": {"EfficientNet-B3": 50, "ViT-B/16": 50} if ensemble.eff_status.get("available") and ensemble.vit_status.get("available") else {},
+        "fft_azimuthal_curve": None,
+        "roc_curve": None,
+        "confusion_matrix": (checkpoint_test or {}).get("confusion_matrix"),
+        "confusion_matrix_source": "efficientnet_checkpoint_final_test" if checkpoint_test else None,
+        "local_evaluation": local_eval or {"status": "NOT_MEASURED"},
     }
 
 @app.post("/predict")
 async def predict(
+    request: Request,
     file: UploadFile = File(...),
     attack: bool = Query(False),
     epsilon: float = Query(0.05),
-    gemini_key: Optional[str] = Query(None)
+    gemini_key: Optional[str] = Query(None),
 ):
+    allowed, _remaining = rate_limiter.allow(request.client.host if request.client else "unknown", time.time())
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Too many scans. Wait a minute and try again.")
+    filename = file.filename or "upload"
+    content_type = file.content_type or ""
+    contents = await file.read()
     try:
-        filename = file.filename or "upload"
-        content_type = file.content_type or ""
-        contents = await file.read()
-        
-        is_video = (
-            content_type.startswith("video/") or 
-            any(filename.lower().endswith(ext) for ext in [".mp4", ".mov", ".avi", ".webm", ".mkv"])
-        )
-        
-        if is_video:
-            # Process Video File
+        kind = classify_upload(filename, content_type, contents)
+    except UploadRejected as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    try:
+        if kind == "video":
             result = process_video_file(
                 video_bytes=contents,
                 extractor=extractor,
@@ -223,186 +248,222 @@ async def predict(
                 device=device,
                 max_frames=12,
                 attack=attack,
-                epsilon=epsilon
+                epsilon=epsilon,
             )
             result["filename"] = filename
-            
-            # Formulate forensic explanation for video
-            explanation = generate_forensic_explanation(result, gemini_key=gemini_key)
-            result["explanation"] = explanation
-            return result
-        else:
-            # Process Single Image
-            image = Image.open(io.BytesIO(contents)).convert("RGB")
-            face_meta = extractor.extract_face_and_landmarks(image)
-            face_img = face_meta["face_img"]
-            face_np = face_meta["face_np"]
-            face_crop = face_img if face_meta.get("detected") else image
-            
-            # Input tensor for CAM / FGSM pipelines
-            input_tensor = ensemble.eff_transform(face_crop).unsqueeze(0).to(device)
-            
-            # 1. Dual-Crop Spatial Inference with TTA
-            if attack:
-                input_tensor = generate_adversarial_perturbation(ensemble, input_tensor, label_idx=1, epsilon=epsilon)
-                with torch.no_grad():
-                    eff_logit = ensemble.eff_model(input_tensor).item()
-                    eff_fake_p = torch.sigmoid(torch.tensor(eff_logit)).item()
-                raw_real_prob = round(1.0 - eff_fake_p, 4)
-                raw_fake_prob = round(eff_fake_p, 4)
-                eff_fake_prob = raw_fake_prob
-                vit_fake_prob = raw_fake_prob
-            else:
-                # Backbone 1: EfficientNet-B3 on MTCNN-aligned Face Crop with TTA
-                t_crop = ensemble.eff_transform(face_crop).unsqueeze(0).to(device)
-                t_crop_flip = ensemble.eff_transform(face_crop.transpose(Image.FLIP_LEFT_RIGHT)).unsqueeze(0).to(device)
-                with torch.no_grad():
-                    eff_logit1 = ensemble.eff_model(t_crop).item()
-                    eff_logit2 = ensemble.eff_model(t_crop_flip).item()
-                    eff_fake_prob = torch.sigmoid(torch.tensor((eff_logit1 + eff_logit2) / 2.0)).item()
-
-                # Backbone 2: ViT-B/16 on Contextual Portrait with TTA
-                v_in = ensemble.processor(images=image, return_tensors='pt')
-                v_in_flip = ensemble.processor(images=image.transpose(Image.FLIP_LEFT_RIGHT), return_tensors='pt')
-                with torch.no_grad():
-                    vit_l1 = ensemble.vit_model(pixel_values=v_in['pixel_values'].to(device)).logits
-                    vit_l2 = ensemble.vit_model(pixel_values=v_in_flip['pixel_values'].to(device)).logits
-                    vit_probs = torch.softmax((vit_l1 + vit_l2) / 2.0, dim=1)[0]
-                    vit_fake_prob = float(vit_probs[1].item())
-
-                raw_fake_prob = float((vit_fake_prob * 0.55) + (eff_fake_prob * 0.45))
-                raw_real_prob = round(1.0 - raw_fake_prob, 4)
-                raw_fake_prob = round(raw_fake_prob, 4)
-
-            # 2. Spectral Fourier Analysis (Physics Domain)
-            spectral_data = calculate_spectral_analysis(face_np)
-            fft_spectrum = compute_fft_spectrum(face_np)
-            
-            # 3. Biometric Iris & Corneal Specular Reflection Analysis
-            iris_data = iris_engine.analyze_eyes(image, face_meta.get("landmarks", []))
-            
-            # 4. Color Space & Boundary Discontinuity Analysis
-            color_data = analyze_chroma_and_boundary(face_np, bbox=face_meta.get("bbox"))
-
-            # 5. Provenance, EXIF & C2PA Validation
-            provenance_data = parse_exif_metadata(image)
-            c2pa_data = detect_c2pa_manifest(contents)
-            synthid_data = detect_synthid_watermark(face_np, contents)
-            visual_watermark_data = detect_visual_watermarks_and_logos(np.array(image), contents)
-            hash_data = compute_cryptographic_and_perceptual_hashes(face_np, contents)
-            feedback_override = lookup_feedback_memory(hash_data.get("sha256"), hash_data.get("phash"))
-            
-            # Multi-Modal Forensic Evidence Bayesian Fusion
-            iris_score = float(iris_data.get("iris_anomaly_score", 0.25))
-            spectral_score = float(spectral_data.get("anomaly_score", 0.25))
-            color_score = float(color_data.get("color_anomaly_index", 0.20))
-            
-            # Initial base spatial ensemble score
-            fused_fake_raw = (
-                (vit_fake_prob * 0.40) +
-                (eff_fake_prob * 0.30) +
-                (spectral_score * 0.15) +
-                (iris_score * 0.10) +
-                (color_score * 0.05)
-            )
-
-            # Grad-CAM XAI Heatmap
-            try:
-                heatmap = generate_heatmap(ensemble, input_tensor, face_np)
-            except Exception:
-                heatmap = face_np
-                
-            face_resized = cv2.resize(face_np, (224, 224))
-            full_b64 = f"data:image/jpeg;base64,{base64.b64encode(contents).decode('utf-8')}"
-            
-            preliminary_payload = {
-                "media_type": "image",
-                "filename": filename,
-                "fake_probability": float(np.clip(fused_fake_raw, 0.001, 0.999)),
-                "spectral_anomaly_score": spectral_data["anomaly_score"],
-                "iris_biometrics": iris_data,
-                "color_forensics": color_data,
-                "face_b64": np_to_b64(face_resized),
-                "full_image_b64": full_b64
-            }
-
-            # Generate natural language explainability report & multimodal vision verdict
-            explanation = generate_forensic_explanation(preliminary_payload, gemini_key=gemini_key)
-            
-            # 6. Unified Decision Fusion with Multimodal Reasoning & Ground Truth Memory
-            gemini_score = explanation.get("gemini_fake_score") if isinstance(explanation, dict) else None
-            
-            fusion_result = ForensicDecisionEngine.fuse_evidence(
-                eff_fake_prob=eff_fake_prob,
-                vit_fake_prob=vit_fake_prob,
-                spectral_score=spectral_data["anomaly_score"],
-                iris_data=iris_data,
-                color_data=color_data,
-                face_detected=face_meta.get("detected", True),
-                provenance_data=provenance_data,
-                c2pa_data=c2pa_data,
-                synthid_data=synthid_data,
-                gemini_fake_score=gemini_score,
-                feedback_override=feedback_override
-            )
-            
-            prediction = fusion_result["prediction"]
-            confidence = fusion_result["confidence"]
-            authenticity_index = fusion_result["authenticity_index"]
-            fused_real_prob = fusion_result["real_probability"]
-            fused_fake_prob = fusion_result["fake_probability"]
-            feedback_applied = fusion_result.get("feedback_applied", False)
-            
-            if feedback_applied and isinstance(explanation, dict):
-                explanation["summary"] = f"Calibrated Human Feedback Memory Applied: Specimen was previously corrected and recorded as {prediction}."
-                if "key_findings" in explanation and isinstance(explanation["key_findings"], list):
-                    explanation["key_findings"].insert(0, f"Active Learning Memory Match: Perceptual pHash '{hash_data.get('phash')}' matched ground truth.")
-            
-            response_payload = {
-                "media_type": "image",
-                "filename": filename,
-                "prediction": prediction,
-                "confidence": round(confidence, 4),
-                "authenticity_index": authenticity_index,
-                "real_probability": fused_real_prob,
-                "fake_probability": fused_fake_prob,
-                "verdict_badge": fusion_result["verdict_badge"],
-                "is_inconclusive": fusion_result["is_inconclusive"],
-                "discordance_level": fusion_result["discordance_level"],
-                "discordance_value": fusion_result.get("discordance_value", 0.0),
-                "decision_notes": fusion_result.get("decision_notes", ""),
-                "weights_used": fusion_result.get("weights_used", {}),
-                "raw_signals": fusion_result.get("raw_signals", {}),
-                "raw_spatial_fake_prob": raw_fake_prob,
-                "spectral_anomaly_score": spectral_data["anomaly_score"],
-                "high_freq_ratio": spectral_data["high_freq_ratio"],
-                "radial_profile": spectral_data["radial_profile"],
-                "iris_biometrics": iris_data,
-                "color_forensics": color_data,
-                "provenance": provenance_data,
-                "c2pa": c2pa_data,
-                "synthid": synthid_data,
-                "visual_watermark": visual_watermark_data,
-                "hashes": hash_data,
-                "feedback_applied": feedback_applied,
-                "feedback_details": feedback_override if feedback_applied else None,
-                "adversarial_attack_applied": attack,
-                "epsilon": epsilon,
-                "face_detected": face_meta["detected"],
-                "bbox": face_meta["bbox"],
-                "landmarks": face_meta["landmarks"],
-                "face_b64": np_to_b64(face_resized),
-                "full_image_b64": full_b64,
-                "heatmap_b64": np_to_b64(heatmap),
-                "fft_b64": np_to_b64(fft_spectrum),
-                "explanation": explanation
-            }
-            
-            return response_payload
-    except Exception as e:
+            result["explanation"] = generate_forensic_explanation(result, gemini_key=gemini_key)
+            result["score_semantics"] = "mean_of_per_frame_neural_scores"
+            return JSONResponse(_jsonable(result))
+        record = analyze_image(
+            contents=contents,
+            filename=filename,
+            ensemble=ensemble,
+            extractor=extractor,
+            iris_engine=iris_engine,
+            device=device,
+            attack=attack,
+            epsilon=epsilon,
+            gemini_key=gemini_key,
+        )
+        save_scan(record)
+        return JSONResponse(_jsonable(record))
+    except ScanCancelled:
+        raise HTTPException(status_code=409, detail="Scan cancelled.")
+    except Exception:
         import traceback
         traceback.print_exc()
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        raise HTTPException(status_code=500, detail="The scan failed. The server log has the traceback.")
+
+
+def _jsonable(value):
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, (np.floating, np.integer)):
+        return value.item()
+    if isinstance(value, bytes):
+        return None
+    if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+        return None
+    return value
+
+
+def _stream_event(event):
+    result = dict(event.get("result") or {})
+    slim = {key: item for key, item in result.items() if not str(key).endswith("b64")}
+    public = dict(event)
+    public["result"] = slim
+    return {"type": "stage", **_jsonable(public)}
+
+
+def _stream_scan(contents, filename, attack, epsilon, gemini_key, scan_id):
+    loop = asyncio.get_running_loop()
+    events: asyncio.Queue = asyncio.Queue()
+
+    def publish(item):
+        loop.call_soon_threadsafe(events.put_nowait, item)
+
+    def on_stage(event):
+        publish(_stream_event(event))
+
+    def worker():
+        try:
+            record = analyze_image(
+                contents=contents,
+                filename=filename,
+                ensemble=ensemble,
+                extractor=extractor,
+                iris_engine=iris_engine,
+                device=device,
+                attack=attack,
+                epsilon=epsilon,
+                gemini_key=gemini_key,
+                on_stage=on_stage,
+                scan_id=scan_id,
+            )
+            save_scan(record)
+            publish({"type": "complete", "scan": _jsonable(record)})
+        except ScanCancelled:
+            publish({"type": "error", "message": "Scan cancelled."})
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            publish({"type": "error", "message": "The scan failed before a decision was produced."})
+        finally:
+            publish(None)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    async def generate():
+        while True:
+            try:
+                item = await asyncio.wait_for(events.get(), timeout=2.0)
+            except asyncio.TimeoutError:
+                yield "data: " + json.dumps({"type": "heartbeat"}) + "\n\n"
+                continue
+            if item is None:
+                break
+            yield "data: " + json.dumps(item, default=str) + "\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.post("/scan")
+async def scan_media(
+    request: Request,
+    file: UploadFile = File(...),
+    attack: bool = Query(False),
+    epsilon: float = Query(0.05),
+    gemini_key: Optional[str] = Query(None),
+):
+    allowed, _remaining = rate_limiter.allow(request.client.host if request.client else "unknown", time.time())
+    if not allowed:
+        raise HTTPException(status_code=429, detail="Too many scans. Wait a minute and try again.")
+    filename = file.filename or "upload"
+    contents = await file.read()
+    try:
+        kind = classify_upload(filename, file.content_type or "", contents)
+    except UploadRejected as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    if kind != "image":
+        raise HTTPException(status_code=400, detail="The live timeline currently accepts an image. Use /predict for video.")
+    import uuid
+    scan_id = uuid.uuid4().hex[:16]
+    return _stream_scan(contents, filename, attack, epsilon, gemini_key, scan_id)
+
+
+@app.post("/scan/{scan_id}/cancel")
+def cancel(scan_id: str):
+    cancel_scan(scan_id)
+    return {"scan_id": scan_id, "cancel_requested": True}
+
+
+@app.get("/scan/{scan_id}")
+def read_scan(scan_id: str):
+    record = get_scan(scan_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Scan not found. Records stay in memory only.")
+    return record
+
+
+@app.get("/report/{scan_id}")
+def download_report(scan_id: str, inline: bool = False):
+    record = get_scan(scan_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Scan not found. Records stay in memory only.")
+    pdf = generate_scan_pdf(record)
+    filename = f"Sentinel-Forensic-Audit-{scan_id[:8]}.pdf"
+    disposition = "inline" if inline else "attachment"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"{disposition}; filename={filename}"},
+    )
+
+
+@app.get("/report/{scan_id}/html", response_class=HTMLResponse)
+def view_report_html(scan_id: str):
+    """Renders the live interactive 4-page HTML forensic evidence dossier directly in the browser."""
+    record = get_scan(scan_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Scan not found. Records stay in memory only.")
+    return HTMLResponse(content=generate_report_html(record))
+
+
+@app.get("/demo-report", response_class=HTMLResponse)
+def demo_report_page():
+    """Returns the live interactive 4-page HTML forensic report dossier with all 7 graphs."""
+    report_file = os.path.join(os.path.dirname(__file__), "..", "test_report.html")
+    if os.path.exists(report_file):
+        with open(report_file, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    sample = {"scan_id": "demo-sample-01", "prediction": "Fake", "confidence": 0.978}
+    return HTMLResponse(content=generate_report_html(sample))
+
+
+@app.get("/demo-report/pdf")
+def demo_report_pdf():
+    """Returns the 4-page publication-grade PDF dossier with inline browser display."""
+    artifact_pdf = r"C:\Users\harsh\.gemini\antigravity\brain\bbcd98a0-900e-4b53-8e4b-456b213399b5\sentinel_sample_forensic_report.pdf"
+    if os.path.exists(artifact_pdf):
+        with open(artifact_pdf, "rb") as f:
+            pdf_bytes = f.read()
+    else:
+        sample = {"scan_id": "demo-sample-01", "prediction": "Fake", "confidence": 0.978}
+        pdf_bytes = generate_scan_pdf(sample)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=Deepfake-Sentinel-4Page-Audit.pdf"},
+    )
+
+
+@app.post("/export-report-pdf")
+async def export_report_pdf(payload: Dict[str, Any] = Body(...)):
+    """Exports a publication-grade 4-page forensic PDF dossier directly from a scan record."""
+    try:
+        pdf_bytes = generate_scan_pdf(payload)
+        scan_id = payload.get("scan_id", "live")[:10]
+        filename = f"Sentinel-Forensic-Audit-{scan_id}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}")
+
 
 @app.post("/predict-frame")
 async def predict_frame(payload: FramePayload = Body(...)):
@@ -417,11 +478,12 @@ async def predict_frame(payload: FramePayload = Body(...)):
             return {
                 "face_detected": False,
                 "prediction": "No Face",
-                "real_probability": 0.0,
-                "fake_probability": 0.0,
-                "confidence": 0.0,
-                "authenticity_index": 0.0,
-                "spectral_anomaly_score": 0.0
+                "real_probability": None,
+                "fake_probability": None,
+                "confidence": None,
+                "authenticity_index": None,
+                "spectral_anomaly_score": None,
+                "note": "No face was detected, so no score was produced.",
             }
             
         face_img = face_meta["face_img"]
@@ -436,19 +498,17 @@ async def predict_frame(payload: FramePayload = Body(...)):
         hash_data = compute_cryptographic_and_perceptual_hashes(face_np)
         feedback_override = lookup_feedback_memory(hash_data.get("sha256"), hash_data.get("phash"))
         
-        if feedback_override:
-            pred = feedback_override.get("corrected_label", "Real")
-            real_p = 0.999 if pred == "Real" else 0.001
-            fake_p = 0.001 if pred == "Real" else 0.999
-            conf = 0.999
-        
         return {
             "face_detected": True,
             "prediction": pred,
             "real_probability": real_p,
             "fake_probability": fake_p,
             "confidence": conf,
-            "authenticity_index": round(real_p * 100, 1),
+            "authenticity_index": None if real_p is None else round(real_p * 100, 1),
+            "user_annotation": None if not feedback_override else {
+                "overrides_prediction": False,
+                "corrected_label": feedback_override.get("corrected_label"),
+            },
             "spectral_anomaly_score": spectral_data["anomaly_score"],
             "bbox": face_meta["bbox"],
             "iris_biometrics": iris_data,
