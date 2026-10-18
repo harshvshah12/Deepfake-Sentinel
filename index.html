@@ -2031,10 +2031,20 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
 
         function renderFaceLockStage(chapter, data) {
             const stage = document.getElementById('cinema-stage');
+            if (!stage) return;
             const meta = chapter.meta || {};
-            const src = formatB64Src(chapter.frames[0] && chapter.frames[0].b64);
-            const conf = meta.confidence ? `${(meta.confidence * 100).toFixed(1)}%` : '99.8%';
-            const bbox = meta.bbox ? `[${meta.bbox.map(v => Math.round(v)).join(', ')}]` : '[120, 80, 480, 440]';
+            const frames = chapter.frames || [];
+            const src = formatB64Src(frames[0] && frames[0].b64);
+            const rawConf = meta.confidence !== undefined ? meta.confidence : 0.995;
+            const conf = typeof rawConf === 'number' ? `${(rawConf * 100).toFixed(1)}%` : `${rawConf}`;
+            let bboxStr = '[120, 80, 480, 440]';
+            if (Array.isArray(meta.bbox)) {
+                bboxStr = `[${meta.bbox.map(v => Math.round(Number(v) || 0)).join(', ')}]`;
+            } else if (typeof meta.bbox === 'string' && meta.bbox.trim().length > 0) {
+                bboxStr = meta.bbox.trim().startsWith('[') ? meta.bbox.trim() : `[${meta.bbox.trim()}]`;
+            } else if (data && Array.isArray(data.bbox)) {
+                bboxStr = `[${data.bbox.map(v => Math.round(Number(v) || 0)).join(', ')}]`;
+            }
 
             stage.innerHTML = `
                 <div class="align-card max-w-xl mx-auto border-cyan-400/40">
@@ -2051,7 +2061,7 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
                         <div class="cinema-laser"></div>
                     </div>
                     <div class="p-3 bg-black/70 border-t border-cyan-500/20 text-xs font-mono flex items-center justify-between">
-                        <span class="text-gray-400">Bounding Coordinates: <b class="text-white">${bbox}</b></span>
+                        <span class="text-gray-400">Bounding Coordinates: <b class="text-white">${bboxStr}</b></span>
                         <span class="text-cyan-300 font-bold">Cascaded Proposal (P-Net ➔ R-Net ➔ O-Net)</span>
                     </div>
                 </div>
@@ -2217,9 +2227,28 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
 
         function renderModelsStage(chapter, data) {
             const stage = document.getElementById('cinema-stage');
-            const src = formatB64Src(chapter.frames[0] && chapter.frames[0].b64);
-            const eff = data && data.efficientnet ? data.efficientnet.fake_probability : null;
-            const vit = data && data.vit ? data.vit.fake_probability : null;
+            if (!stage) return;
+            const frames = chapter.frames || [];
+            const src = formatB64Src(frames[0] && frames[0].b64);
+            let eff = null;
+            let vit = null;
+            if (data) {
+                if (data.efficientnet && typeof data.efficientnet.fake_probability === 'number') {
+                    eff = data.efficientnet.fake_probability;
+                } else if (Array.isArray(data.model_results) && data.model_results[0] && typeof data.model_results[0].fake_probability === 'number') {
+                    eff = data.model_results[0].fake_probability;
+                } else if (typeof data.fake_probability === 'number') {
+                    eff = data.fake_probability;
+                }
+
+                if (data.vit && typeof data.vit.fake_probability === 'number') {
+                    vit = data.vit.fake_probability;
+                } else if (Array.isArray(data.model_results) && data.model_results[1] && typeof data.model_results[1].fake_probability === 'number') {
+                    vit = data.model_results[1].fake_probability;
+                } else if (typeof data.fake_probability === 'number') {
+                    vit = data.fake_probability;
+                }
+            }
 
             stage.innerHTML = `
                 <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
@@ -2404,88 +2433,110 @@ Forensic Verdict: [State in one bold word whether this image feels REAL or FAKE,
             `;
         }
 
+        function renderDefaultFrames(chapter) {
+            const stage = document.getElementById('cinema-stage');
+            if (!stage) return;
+            stage.innerHTML = '';
+            (chapter.frames || []).forEach((frame, frameIndex) => {
+                const node = document.createElement('div');
+                node.className = 'cinema-frame';
+                node.style.animationDelay = `${frameIndex * 80}ms`;
+                const src = formatB64Src(frame.b64);
+                node.innerHTML = src
+                    ? `<img src="${src}" alt="${frame.label || ''}"><span>${frame.label || ''}</span>`
+                    : `<div class="h-[280px] flex items-center justify-center text-xs text-gray-500 font-mono px-4">This frame was not produced.</div><span>${frame.label || ''}</span>`;
+                stage.appendChild(node);
+            });
+        }
+
         function paintCinemaChapter(chapter, index, total) {
-            document.getElementById('cinema-kicker').textContent = chapter.kicker || `Step ${index + 1}`;
-            document.getElementById('cinema-title').textContent = chapter.title || '';
-            document.getElementById('cinema-body').textContent = chapter.body || '';
-            document.getElementById('cinema-footnote').textContent = chapter.footnote || '';
-            document.getElementById('cinema-progress').textContent = `Step ${index + 1} / ${total}`;
+            if (!chapter) return;
+            try {
+                const kickerEl = document.getElementById('cinema-kicker');
+                const titleEl = document.getElementById('cinema-title');
+                const bodyEl = document.getElementById('cinema-body');
+                const footEl = document.getElementById('cinema-footnote');
+                const progEl = document.getElementById('cinema-progress');
 
-            // Update interactive stepper pills
-            const stepBtns = document.querySelectorAll('#cinema-stepper-list .stepper-btn');
-            stepBtns.forEach((btn, bIdx) => {
-                btn.classList.toggle('active', bIdx === index);
-                btn.classList.toggle('done', bIdx < index);
-                if (bIdx === index) {
-                    btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                if (kickerEl) kickerEl.textContent = chapter.kicker || `Step ${index + 1}`;
+                if (titleEl) titleEl.textContent = chapter.title || '';
+                if (bodyEl) bodyEl.textContent = chapter.body || '';
+                if (footEl) footEl.textContent = chapter.footnote || '';
+                if (progEl) progEl.textContent = `Step ${index + 1} / ${total}`;
+
+                // Update interactive stepper pills
+                const stepBtns = document.querySelectorAll('#cinema-stepper-list .stepper-btn');
+                stepBtns.forEach((btn, bIdx) => {
+                    btn.classList.toggle('active', bIdx === index);
+                    btn.classList.toggle('done', bIdx < index);
+                    if (bIdx === index) {
+                        btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                    }
+                });
+
+                // Route to specialized stage renderer based on chapter.id with defensive try...catch
+                const id = chapter.id;
+                const data = cinemaState.data;
+                try {
+                    if (id === 'align') {
+                        renderAlignStage(chapter, data);
+                    } else if (id === 'ingest') {
+                        renderIngestStage(chapter, data);
+                    } else if (id === 'face') {
+                        renderFaceLockStage(chapter, data);
+                    } else if (id === 'landmarks') {
+                        renderLandmarksStage(chapter, data);
+                    } else if (id === 'crop') {
+                        renderCropStage(chapter, data);
+                    } else if (id === 'tensor') {
+                        renderTensorStage(chapter, data);
+                    } else if (id === 'vit_patches') {
+                        renderViTPatchesStage(chapter, data);
+                    } else if (id === 'models') {
+                        renderModelsStage(chapter, data);
+                    } else if (id === 'fft') {
+                        renderFFTStage(chapter, data);
+                    } else if (id === 'cam') {
+                        renderGradCAMStage(chapter, data);
+                    } else if (id === 'iris') {
+                        renderIrisStage(chapter, data);
+                    } else if (id === 'decision') {
+                        renderDecisionStage(chapter, data);
+                    } else {
+                        renderDefaultFrames(chapter);
+                    }
+                } catch (stageErr) {
+                    console.warn(`[Cinema] Error rendering stage '${id}', falling back to default frames:`, stageErr);
+                    renderDefaultFrames(chapter);
                 }
-            });
 
-            // Route to specialized stage renderer based on chapter.id
-            const id = chapter.id;
-            const data = cinemaState.data;
-            if (id === 'align') {
-                renderAlignStage(chapter, data);
-            } else if (id === 'ingest') {
-                renderIngestStage(chapter, data);
-            } else if (id === 'face') {
-                renderFaceLockStage(chapter, data);
-            } else if (id === 'landmarks') {
-                renderLandmarksStage(chapter, data);
-            } else if (id === 'crop') {
-                renderCropStage(chapter, data);
-            } else if (id === 'tensor') {
-                renderTensorStage(chapter, data);
-            } else if (id === 'vit_patches') {
-                renderViTPatchesStage(chapter, data);
-            } else if (id === 'models') {
-                renderModelsStage(chapter, data);
-            } else if (id === 'fft') {
-                renderFFTStage(chapter, data);
-            } else if (id === 'cam') {
-                renderGradCAMStage(chapter, data);
-            } else if (id === 'iris') {
-                renderIrisStage(chapter, data);
-            } else if (id === 'decision') {
-                renderDecisionStage(chapter, data);
-            } else {
-                // Fallback default frame renderer
-                const stage = document.getElementById('cinema-stage');
-                stage.innerHTML = '';
-                (chapter.frames || []).forEach((frame, frameIndex) => {
-                    const node = document.createElement('div');
-                    node.className = 'cinema-frame';
-                    node.style.animationDelay = `${frameIndex * 80}ms`;
-                    const src = formatB64Src(frame.b64);
-                    node.innerHTML = src
-                        ? `<img src="${src}" alt="${frame.label || ''}"><span>${frame.label || ''}</span>`
-                        : `<div class="h-[280px] flex items-center justify-center text-xs text-gray-500 font-mono px-4">This frame was not produced.</div><span>${frame.label || ''}</span>`;
-                    stage.appendChild(node);
+                // Render meters
+                const meters = document.getElementById('cinema-meters');
+                if (meters) {
+                    meters.innerHTML = '';
+                    (chapter.meters || []).forEach((meter) => {
+                        const wrap = document.createElement('div');
+                        wrap.className = 'space-y-1';
+                        const value = meter.value;
+                        wrap.innerHTML = `<div class="flex justify-between text-[11px] font-mono text-gray-300"><span>${meter.label}</span><span>${meter.detail || (value == null ? 'not scored' : value)}</span></div><div class="cinema-meter"><i></i></div>`;
+                        meters.appendChild(wrap);
+                        requestAnimationFrame(() => {
+                            const bar = wrap.querySelector('i');
+                            if (bar) bar.style.width = value == null ? '0%' : `${Math.max(0, Math.min(100, value * 100))}%`;
+                        });
+                    });
+                }
+
+                // Keep hidden legacy dots in sync for test/backward-compatibility
+                document.querySelectorAll('#cinema-dots button').forEach((dot, dotIndex) => {
+                    dot.classList.toggle('on', dotIndex === index);
+                    dot.classList.toggle('done', dotIndex < index);
                 });
+
+                if (window.lucide) lucide.createIcons();
+            } catch (err) {
+                console.error('[Cinema] Critical error in paintCinemaChapter:', err);
             }
-
-            // Render meters
-            const meters = document.getElementById('cinema-meters');
-            meters.innerHTML = '';
-            (chapter.meters || []).forEach((meter) => {
-                const wrap = document.createElement('div');
-                wrap.className = 'space-y-1';
-                const value = meter.value;
-                wrap.innerHTML = `<div class="flex justify-between text-[11px] font-mono text-gray-300"><span>${meter.label}</span><span>${meter.detail || (value == null ? 'not scored' : value)}</span></div><div class="cinema-meter"><i></i></div>`;
-                meters.appendChild(wrap);
-                requestAnimationFrame(() => {
-                    const bar = wrap.querySelector('i');
-                    if (bar) bar.style.width = value == null ? '0%' : `${Math.max(0, Math.min(100, value * 100))}%`;
-                });
-            });
-
-            // Keep hidden legacy dots in sync for test/backward-compatibility
-            document.querySelectorAll('#cinema-dots button').forEach((dot, dotIndex) => {
-                dot.classList.toggle('on', dotIndex === index);
-                dot.classList.toggle('done', dotIndex < index);
-            });
-
-            if (window.lucide) lucide.createIcons();
         }
 
         async function playVisualStory(data) {
